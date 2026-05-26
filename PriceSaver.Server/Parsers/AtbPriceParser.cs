@@ -8,9 +8,9 @@ namespace PriceSaver.Server.Parsers
 {
     public class AtbPriceParser : IPriceParser
     {
+        private const string BaseUrl = "https://www.atbmarket.com/";
         private const string JinaReaderBaseUrl = "https://r.jina.ai/";
 
-        private static readonly HttpClient Http = CreateHttpClient();
         private static readonly Regex MarkdownHeadingRegex = new(@"^#+\s+(?<title>.+)$", RegexOptions.Compiled);
 
         private static readonly Regex AtbCardPriceRegex = new(
@@ -20,6 +20,8 @@ namespace PriceSaver.Server.Parsers
         private static readonly Regex PriceWithCurrencyRegex = new(
             @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s*\u0433\u0440\u043d\s*/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly HttpClient JinaHttp = CreateJinaHttpClient();
 
         public string StoreKey => "atb";
 
@@ -49,22 +51,88 @@ namespace PriceSaver.Server.Parsers
 
         private static async Task<(string Content, bool IsHtml)> DownloadProductContentAsync(string url, CancellationToken ct)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Referrer = new Uri("https://www.atbmarket.com/");
-            request.Headers.CacheControl = new CacheControlHeaderValue
+            try
             {
-                NoCache = true
-            };
-
-            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-
-            if (response.StatusCode == HttpStatusCode.Forbidden)
+                var html = await DownloadProductHtmlWithCookiesAsync(url, ct);
+                if (!string.IsNullOrWhiteSpace(html))
+                {
+                    return (html, true);
+                }
+            }
+            catch
             {
-                return (await DownloadProductTextWithReaderAsync(url, ct), false);
+                // Fall through to Jina.
             }
 
-            response.EnsureSuccessStatusCode();
-            return (await response.Content.ReadAsStringAsync(ct), true);
+            // Step 2: fall back to Jina Reader (returns rendered markdown/text).
+            return (await DownloadProductTextWithReaderAsync(url, ct), false);
+        }
+
+        /// <summary>
+        /// Fetches the product page HTML by:
+        /// 1. Creating a fresh HttpClient with a CookieContainer (same pattern as Scraper.cs).
+        /// 2. Warming up the cookie jar with a GET to the ATB homepage.
+        /// 3. Requesting the product URL with the collected cookies and a Referer header.
+        ///
+        /// This satisfies ATB's bot-detection checks without opening any browser window.
+        /// </summary>
+        private static async Task<string> DownloadProductHtmlWithCookiesAsync(string url, CancellationToken ct)
+        {
+            var cookieContainer = new CookieContainer();
+
+            using var handler = new HttpClientHandler
+            {
+                CookieContainer = cookieContainer,
+                UseCookies = true,
+                AutomaticDecompression = DecompressionMethods.All
+            };
+
+            using var client = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+
+            AddBrowserHeaders(client, referer: null);
+
+            var warmupRequest = new HttpRequestMessage(HttpMethod.Get, BaseUrl);
+            using var warmupResponse = await client.SendAsync(warmupRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            var productRequest = new HttpRequestMessage(HttpMethod.Get, url);
+            productRequest.Headers.Referrer = new Uri(BaseUrl);
+            productRequest.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
+
+            using var productResponse = await client.SendAsync(productRequest, HttpCompletionOption.ResponseHeadersRead, ct);
+
+            if (productResponse.StatusCode == HttpStatusCode.Forbidden)
+            {
+                throw new InvalidOperationException("ATB returned 403 even after cookie warm-up.");
+            }
+
+            productResponse.EnsureSuccessStatusCode();
+            return await productResponse.Content.ReadAsStringAsync(ct);
+        }
+
+        /// <summary>
+        /// Adds the full set of headers a real Chrome browser sends.
+        /// Missing sec-* and Accept headers are the most common reason plain
+        /// HttpClient requests are fingerprinted as bots.
+        /// </summary>
+        private static void AddBrowserHeaders(HttpClient client, string? referer)
+        {
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
+            client.DefaultRequestHeaders.Accept.ParseAdd(
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8");
+            client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Upgrade-Insecure-Requests", "1");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-ch-ua",
+                "\"Google Chrome\";v=\"125\", \"Chromium\";v=\"125\", \"Not.A/Brand\";v=\"24\"");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-fetch-dest", "document");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-fetch-mode", "navigate");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-fetch-site", referer is null ? "none" : "same-origin");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("sec-fetch-user", "?1");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("Connection", "keep-alive");
         }
 
         private static async Task<string> DownloadProductTextWithReaderAsync(string url, CancellationToken ct)
@@ -72,7 +140,7 @@ namespace PriceSaver.Server.Parsers
             using var request = new HttpRequestMessage(HttpMethod.Get, $"{JinaReaderBaseUrl}{url}");
             request.Headers.Accept.ParseAdd("text/plain");
 
-            using var response = await Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+            using var response = await JinaHttp.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync(ct);
         }
@@ -244,23 +312,16 @@ namespace PriceSaver.Server.Parsers
         private static string HasClass(string className) =>
             $"contains(concat(' ', normalize-space(@class), ' '), ' {className} ')";
 
-        private static HttpClient CreateHttpClient()
+        private static HttpClient CreateJinaHttpClient()
         {
             var handler = new HttpClientHandler
             {
                 AutomaticDecompression = DecompressionMethods.All
             };
 
-            var http = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(20)
-            };
-
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
-            http.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
-            http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("uk-UA,uk;q=0.9,en-US;q=0.8,en;q=0.7");
-            http.DefaultRequestHeaders.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
-            http.DefaultRequestHeaders.TryAddWithoutValidation("Upgrade-Insecure-Requests", "1");
+            var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+            http.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
 
             return http;
         }
