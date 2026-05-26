@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using PriceSaver.Server.Options;
 using PriceSaver.Server.Services;
 
 namespace PriceSaver.Server.Controllers
@@ -8,22 +10,19 @@ namespace PriceSaver.Server.Controllers
     public class JobsController : ControllerBase
     {
         private readonly PriceCheckerService _checker;
-        private readonly ILogger<JobsController> _logger;
-        private readonly IConfiguration _config;
+        private readonly JobsOptions _options;
 
-        public JobsController(PriceCheckerService checker, ILogger<JobsController> logger, IConfiguration config)
+        public JobsController(PriceCheckerService checker, IOptions<JobsOptions> options)
         {
             _checker = checker;
-            _logger = logger;
-            _config = config;
+            _options = options.Value;
         }
 
         [HttpPost("check-prices")]
         public async Task<IActionResult> CheckPrices()
         {
             var key = Request.Headers["X-Api-Key"].ToString();
-            var secret = _config["Jobs:SecretKey"];
-            if (string.IsNullOrEmpty(secret) || key != secret)
+            if (string.IsNullOrEmpty(_options.SecretKey) || key != _options.SecretKey)
             {
                 return Unauthorized();
             }

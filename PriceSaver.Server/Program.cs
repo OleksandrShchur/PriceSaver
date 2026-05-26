@@ -1,4 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using PriceSaver.Server.Options;
+using PriceSaver.Server.Parsers;
+using PriceSaver.Server.Services;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -9,23 +12,34 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
+builder.Services
+    .AddOptions<TelegramOptions>()
+    .Bind(builder.Configuration.GetSection(TelegramOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<JobsOptions>()
+    .Bind(builder.Configuration.GetSection(JobsOptions.SectionName));
+
 // configuration for DB and services
 builder.Services.AddDbContext<PriceSaver.Server.Data.ApplicationDbContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 // Register parsers
-builder.Services.AddSingleton<PriceSaver.Server.Parsers.IPriceParser, PriceSaver.Server.Parsers.AtbPriceParser>();
-builder.Services.AddSingleton<PriceSaver.Server.Parsers.IPriceParser, PriceSaver.Server.Parsers.SilpoPriceParser>();
-builder.Services.AddSingleton<PriceSaver.Server.Parsers.IPriceParser, PriceSaver.Server.Parsers.MetroPriceParser>();
-builder.Services.AddSingleton<PriceSaver.Server.Parsers.IPriceParser, PriceSaver.Server.Parsers.EpicentrPriceParser>();
+builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
+builder.Services.AddSingleton<IPriceParser, SilpoPriceParser>();
+builder.Services.AddSingleton<IPriceParser, MetroPriceParser>();
+builder.Services.AddSingleton<IPriceParser, EpicentrPriceParser>();
 
 // Telegram bot hosted service
-builder.Services.Configure<PriceSaver.Server.Services.TelegramOptions>(builder.Configuration.GetSection("Telegram"));
-builder.Services.AddSingleton<PriceSaver.Server.Services.ITelegramService, PriceSaver.Server.Services.TelegramBotHostedService>();
-builder.Services.AddHostedService<PriceSaver.Server.Services.TelegramBotHostedService>(sp => (PriceSaver.Server.Services.TelegramBotHostedService)sp.GetRequiredService<PriceSaver.Server.Services.ITelegramService>());
+builder.Services.AddSingleton<TelegramService>();
+builder.Services.AddSingleton<ITelegramService>(sp => sp.GetRequiredService<TelegramService>());
+builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
+builder.Services.AddHostedService<TelegramBotHostedService>();
 
 // Price checker
-builder.Services.AddScoped<PriceSaver.Server.Services.PriceCheckerService>();
+builder.Services.AddScoped<PriceCheckerService>();
 
 // Logging
 builder.Host.UseSerilog((ctx, lc) => lc.WriteTo.Console());
