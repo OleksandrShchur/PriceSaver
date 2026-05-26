@@ -1,0 +1,33 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.37301.10 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{54A90642-561A-4BB1-A94E-469ADEE60C69}") = "pricesaver.client", "pricesaver.client\pricesaver.client.esproj", "{90F3DE06-9272-F529-BB98-6B3351535B85}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PriceSaver.Server", "PriceSaver.Server\PriceSaver.Server.csproj", "{3CE2D1CF-8B81-4E25-97D3-BDE8DF4E3FFE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{90F3DE06-9272-F529-BB98-6B3351535B85}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{90F3DE06-9272-F529-BB98-6B3351535B85}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{90F3DE06-9272-F529-BB98-6B3351535B85}.Debug|Any CPU.Deploy.0 = Debug|Any CPU
+		{90F3DE06-9272-F529-BB98-6B3351535B85}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{90F3DE06-9272-F529-BB98-6B3351535B85}.Release|Any CPU.Build.0 = Release|Any CPU
+		{90F3DE06-9272-F529-BB98-6B3351535B85}.Release|Any CPU.Deploy.0 = Release|Any CPU
+		{3CE2D1CF-8B81-4E25-97D3-BDE8DF4E3FFE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3CE2D1CF-8B81-4E25-97D3-BDE8DF4E3FFE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3CE2D1CF-8B81-4E25-97D3-BDE8DF4E3FFE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3CE2D1CF-8B81-4E25-97D3-BDE8DF4E3FFE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {46B1D9B1-5FEC-40BB-89C9-EB1A18ADE6A0}
+	EndGlobalSection
+EndGlobal
