@@ -8,15 +8,11 @@ namespace PriceSaver.Server.Parsers
 {
     public class AtbPriceParser : IPriceParser
     {
-        private const string HryvniaPerUnitText = "\u0433\u0440\u043d/";
-        private const string AtbCardLabelText = "\u043a\u0430\u0440\u0442\u043a\u043e\u044e \u0410\u0422\u0411";
         private const string JinaReaderBaseUrl = "https://r.jina.ai/";
 
         private static readonly HttpClient Http = CreateHttpClient();
         private static readonly Regex MarkdownHeadingRegex = new(@"^#+\s+(?<title>.+)$", RegexOptions.Compiled);
 
-        // FIX: allow optional whitespace around the decimal separator (\s*[.,]\s*)
-        // so that prices split across multiple spans ("250 . 06", "250,06") are captured correctly.
         private static readonly Regex AtbCardPriceRegex = new(
             @"\u043a\u0430\u0440\u0442\u043a\u043e\u044e\s+\u0410\u0422\u0411[^\d]*(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -24,10 +20,6 @@ namespace PriceSaver.Server.Parsers
         private static readonly Regex PriceWithCurrencyRegex = new(
             @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s*\u0433\u0440\u043d\s*/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
-        private static readonly Regex PriceRegex = new(
-            @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)",
-            RegexOptions.Compiled);
 
         public string StoreKey => "atb";
 
@@ -119,79 +111,61 @@ namespace PriceSaver.Server.Parsers
             return (title, price);
         }
 
+        /// <summary>
+        /// Reads the ATB-card discounted price from:
+        /// <code>
+        /// &lt;data value="250.06" class="atbcard-sale__price-top"&gt;...&lt;/data&gt;
+        /// </code>
+        /// Returns null when the element or its value attribute is absent.
+        /// </summary>
         private static string? ExtractAtbCardPriceText(HtmlDocument doc)
         {
-            // Strategy 1: look inside .product-about__buy-row for the full card-price pattern.
-            var buyRowNodes = doc.DocumentNode.SelectNodes($"//*[{HasClass("product-about__buy-row")}]");
-            var cardPriceText = buyRowNodes
-                ?.Select(node => AtbCardPriceRegex.Match(CleanText(node.InnerText)))
-                .FirstOrDefault(match => match.Success)
-                ?.Groups["price"].Value;
+            var dataNode = doc.DocumentNode.SelectSingleNode($"//data[{HasClass("atbcard-sale__price-top")}]");
+            var value = dataNode?.GetAttributeValue("value", null);
 
-            if (!string.IsNullOrWhiteSpace(cardPriceText))
-            {
-                return cardPriceText;
-            }
-
-            // Strategy 2: find any element whose aggregated text contains "карткою атб",
-            // then apply the card-price regex (handles most DOM layouts).
-            cardPriceText = doc.DocumentNode
-                .SelectNodes($"//*[contains(translate(normalize-space(.), '\u043a\u0410\u0422\u0411', '\u043a\u0430\u0442\u0431'), '{AtbCardLabelText.ToLowerInvariant()}')]")
-                ?.Select(node => AtbCardPriceRegex.Match(CleanText(node.InnerText)))
-                .FirstOrDefault(match => match.Success)
-                ?.Groups["price"].Value;
-
-            if (!string.IsNullOrWhiteSpace(cardPriceText))
-            {
-                return cardPriceText;
-            }
-
-            // Strategy 3 (fallback for split-span layouts):
-            // Find raw text nodes that literally contain "карткою" and walk UP the DOM
-            // up to 3 ancestor levels, retrying the regex at each level.
-            // This handles cases where the label ("з карткою АТБ") and the price ("250.06")
-            // live in separate sibling elements — no single element below their common
-            // ancestor contains both, but that ancestor does.
-            var labelTextNodes = doc.DocumentNode.SelectNodes(
-                "//text()[contains(translate(., '\u0410\u0422\u0411', '\u0430\u0442\u0431'), '\u043a\u0430\u0440\u0442\u043a\u043e\u044e \u0430\u0442\u0431')]");
-
-            if (labelTextNodes != null)
-            {
-                foreach (var textNode in labelTextNodes)
-                {
-                    var ancestor = textNode.ParentNode;
-                    for (int level = 0; level < 3 && ancestor != null; level++, ancestor = ancestor.ParentNode)
-                    {
-                        var match = AtbCardPriceRegex.Match(CleanText(ancestor.InnerText));
-                        if (match.Success)
-                        {
-                            return match.Groups["price"].Value;
-                        }
-                    }
-                }
-            }
-
-            return null;
+            return string.IsNullOrWhiteSpace(value) ? null : value;
         }
 
+        /// <summary>
+        /// Reads the regular shelf price from:
+        /// <code>
+        /// &lt;data value="" class="product-price__top"&gt;
+        ///     &lt;span&gt;263.&lt;span class="product-price__coin"&gt;50&lt;/span&gt;&lt;/span&gt;
+        /// &lt;/data&gt;
+        /// </code>
+        /// First tries the value attribute; if empty reconstructs the number from the
+        /// integer text node and the product-price__coin span ("263." + "50" → "263.50").
+        /// </summary>
         private static string? ExtractRegularPriceText(HtmlDocument doc)
         {
-            var priceText = doc.DocumentNode
-                .SelectNodes(
-                    $"//*[{HasClass("product-about__buy-row")}]//*[{HasClass("product-price__top")}]"
-                    + $" | //*[{HasClass("product-price--weight")}]//*[{HasClass("product-price__top")}]")
-                ?.Select(node => PriceRegex.Match(CleanText(node.InnerText)))
-                .FirstOrDefault(match => match.Success)
-                ?.Groups["price"].Value;
+            var dataNode = doc.DocumentNode.SelectSingleNode($"//data[{HasClass("product-price__top")}]");
 
-            priceText ??= doc.DocumentNode
-                .SelectNodes($"//text()[contains(., '{HryvniaPerUnitText}')]")
-                ?.Select(node => CleanText(node.InnerText))
-                .Select(text => PriceWithCurrencyRegex.Match(text))
-                .FirstOrDefault(match => match.Success)
-                ?.Groups["price"].Value;
+            // Prefer the machine-readable value attribute when ATB fills it.
+            var valueAttr = dataNode?.GetAttributeValue("value", null);
+            if (!string.IsNullOrWhiteSpace(valueAttr))
+            {
+                return valueAttr;
+            }
 
-            return priceText;
+            // Reconstruct from the visible span structure:
+            // <span>263.<span class="product-price__coin">50</span></span>
+            var coinNode = dataNode?.SelectSingleNode($".//*[{HasClass("product-price__coin")}]");
+            if (coinNode == null)
+            {
+                return null;
+            }
+
+            // The direct text child of the coin span's parent is the integer+dot part ("263.").
+            var integerPart = coinNode.ParentNode.ChildNodes
+                .Where(n => n.NodeType == HtmlNodeType.Text)
+                .Select(n => n.InnerText.Trim())
+                .FirstOrDefault(t => !string.IsNullOrWhiteSpace(t));
+
+            var decimalPart = coinNode.InnerText.Trim();
+
+            return string.IsNullOrWhiteSpace(integerPart) || string.IsNullOrWhiteSpace(decimalPart)
+                ? null
+                : integerPart + decimalPart;  // "263." + "50" → "263.50"
         }
 
         private static (string Name, decimal Price) ParseProductText(string text)
@@ -215,9 +189,9 @@ namespace PriceSaver.Server.Parsers
 
             var priceText = ExtractAtbCardPriceText(text)
                 ?? PriceWithCurrencyRegex
-                .Matches(text)
-                .Select(match => match.Groups["price"].Value)
-                .FirstOrDefault();
+                    .Matches(text)
+                    .Select(match => match.Groups["price"].Value)
+                    .FirstOrDefault();
 
             if (string.IsNullOrWhiteSpace(priceText))
             {
@@ -244,8 +218,6 @@ namespace PriceSaver.Server.Parsers
         private static string CleanText(string? text) =>
             Regex.Replace(HtmlEntity.DeEntitize(text ?? string.Empty), @"\s+", " ").Trim();
 
-        // FIX: use Regex.Replace to strip ALL Unicode whitespace variants
-        // (including \u00a0 non-breaking space) before parsing.
         private static string NormalizePrice(string priceText) =>
             Regex.Replace(priceText, @"\s", string.Empty).Replace(",", ".");
 
