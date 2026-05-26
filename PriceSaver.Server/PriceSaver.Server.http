@@ -1,0 +1,6 @@
+@PriceSaver.Server_HostAddress = http://localhost:5063
+
+GET {{PriceSaver.Server_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

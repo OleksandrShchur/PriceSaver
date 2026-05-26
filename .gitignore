@@ -1,0 +1,5 @@
+﻿.vs
+pricesaver.client/pricesaver.client.esproj
+PriceSaver.Server/obj
+PriceSaver.Server/appsettings.Development.json
+PriceSaver.Server/PriceSaver.Server.csproj.user
