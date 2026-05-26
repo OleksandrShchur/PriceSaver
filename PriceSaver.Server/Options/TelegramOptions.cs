@@ -10,8 +10,6 @@ namespace PriceSaver.Server.Options
 
         public string WebhookPath { get; set; } = "/api/telegram/callback";
 
-        public string SecretToken { get; set; } = string.Empty;
-
         public bool EnablePolling { get; set; }
 
         public string BotDisplayName { get; set; } = "PriceSaver";

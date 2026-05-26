@@ -81,7 +81,7 @@ namespace PriceSaver.Server.Services
             var user = await _db.Users.FindAsync([telegramId], cancellationToken);
             if (user is null)
             {
-                _db.Users.Add(new PriceSaver.Server.Models.User
+                _db.Users.Add(new Models.User
                 {
                     TelegramId = telegramId,
                     Username = username
