@@ -11,10 +11,10 @@ namespace PriceSaver.Server.Services
         private readonly ITelegramService _telegram;
         private readonly ILogger<PriceCheckerService> _logger;
 
-        public PriceCheckerService(ApplicationDbContext db, IPriceParser[] parsers, ITelegramService telegram, ILogger<PriceCheckerService> logger)
+        public PriceCheckerService(ApplicationDbContext db, IEnumerable<IPriceParser> parsers, ITelegramService telegram, ILogger<PriceCheckerService> logger)
         {
             _db = db;
-            _parsers = parsers;
+            _parsers = parsers.ToArray();
             _telegram = telegram;
             _logger = logger;
         }
