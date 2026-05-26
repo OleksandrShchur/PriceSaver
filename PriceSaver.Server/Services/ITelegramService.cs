@@ -1,5 +1,3 @@
-using System.Threading.Tasks;
-
 namespace PriceSaver.Server.Services
 {
     public interface ITelegramService

@@ -1,6 +1,3 @@
-using System.Threading;
-using System.Threading.Tasks;
-
 namespace PriceSaver.Server.Parsers
 {
     public interface IPriceParser

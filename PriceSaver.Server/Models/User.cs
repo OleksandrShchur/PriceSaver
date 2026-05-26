@@ -1,5 +1,3 @@
-using System;
-
 namespace PriceSaver.Server.Models
 {
     public class User
