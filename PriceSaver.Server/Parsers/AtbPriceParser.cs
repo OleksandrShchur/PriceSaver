@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Net;
 using System.Text.RegularExpressions;
 using HtmlAgilityPack;
 
@@ -5,37 +7,181 @@ namespace PriceSaver.Server.Parsers
 {
     public class AtbPriceParser : IPriceParser
     {
+        private const string JinaReaderBaseUrl = "https://r.jina.ai/";
+
+        private static readonly Regex MarkdownHeadingRegex =
+            new(@"^#+\s+(?<title>.+)$", RegexOptions.Compiled);
+
+        // Matches: "250.06 з карткою ATБ" (price comes BEFORE the card label)
+        // Handles mixed Latin/Cyrillic: A/А, T/Т are often Latin on the ATB site
+        private static readonly Regex AtbCardPriceRegex = new(
+            @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s+з\s+карткою\s+[AА][TТ][БB]",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        // Fallback: "263.50 грн /"  or  "263.50 грн/шт"
+        private static readonly Regex PriceWithCurrencyRegex = new(
+            @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s*\u0433\u0440\u043d\s*/",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly HttpClient JinaHttp = CreateJinaHttpClient();
+
         public string StoreKey => "atb";
 
-        public bool CanParse(string url) => url.Contains("atb.ua", StringComparison.OrdinalIgnoreCase) || url.Contains("atbmarket.ua", StringComparison.OrdinalIgnoreCase);
-
-        public async Task<(string Name, decimal Price)> ParseAsync(string url, CancellationToken ct = default)
+        public bool CanParse(string url)
         {
-            using var http = new HttpClient();
-            http.DefaultRequestHeaders.UserAgent.ParseAdd("PriceSaverBot/1.0 (+https://example.com)");
-            var html = await http.GetStringAsync(url, ct);
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                return false;
 
-            var doc = new HtmlDocument();
-            doc.LoadHtml(html);
+            return uri.Host.Equals("atbmarket.com", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("www.atbmarket.com", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("atbmarket.ua", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("www.atbmarket.ua", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("atb.ua", StringComparison.OrdinalIgnoreCase)
+                || uri.Host.Equals("www.atb.ua", StringComparison.OrdinalIgnoreCase);
+        }
 
-            // Attempt to extract product name and price conservatively
-            var nameNode = doc.DocumentNode.SelectSingleNode("//h1") ?? doc.DocumentNode.SelectSingleNode("//*[@class='product__title']");
-            var title = nameNode?.InnerText?.Trim() ?? "Product";
+        public async Task<(string Name, decimal Price)> ParseAsync(
+            string url,
+            CancellationToken ct = default)
+        {
+            var text = await DownloadProductTextWithReaderAsync(url, ct);
+            return ParseProductText(text);
+        }
 
-            // Find something that looks like a price
-            var priceText = Regex.Match(html, @"(\d+[\s,]?\d*\.?\d*)\s*₴").Groups[1].Value;
+        private static async Task<string> DownloadProductTextWithReaderAsync(
+            string url,
+            CancellationToken ct)
+        {
+            using var request =
+                new HttpRequestMessage(HttpMethod.Get, $"{JinaReaderBaseUrl}{url}");
+
+            request.Headers.Accept.ParseAdd("text/plain");
+
+            using var response = await JinaHttp.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
+
+            response.EnsureSuccessStatusCode();
+
+            return await response.Content.ReadAsStringAsync(ct);
+        }
+
+        private static (string Name, decimal Price) ParseProductText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                throw new InvalidOperationException("ATB product page text was empty.");
+
+            // ── Title ──────────────────────────────────────────────────────────
+            var title = text
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(line => MarkdownHeadingRegex.Match(line))
+                .Where(m => m.Success)
+                .Select(m => NormalizeMarkdownTitle(m.Groups["title"].Value))
+                .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
+
+            if (string.IsNullOrWhiteSpace(title))
+                throw new InvalidOperationException("ATB product title was not found.");
+
+            // ── Price: prefer ATB-card price, fall back to regular price ───────
+            var cleanedText = CleanText(text);
+
+            var priceText = TryExtractCardPrice(cleanedText)
+                ?? TryExtractRegularPrice(cleanedText);
+
             if (string.IsNullOrWhiteSpace(priceText))
-            {
-                // fallback digits
-                priceText = Regex.Match(html, @"\d+[\.,]?\d+").Value;
-            }
+                throw new InvalidOperationException("ATB product price was not found.");
 
-            if (!decimal.TryParse(priceText.Replace(" ", "").Replace(",", "."), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out var price))
+            if (!decimal.TryParse(
+                    NormalizePrice(priceText),
+                    NumberStyles.Number,
+                    CultureInfo.InvariantCulture,
+                    out var price))
             {
-                price = 0m;
+                throw new InvalidOperationException(
+                    $"ATB product price '{priceText}' could not be parsed.");
             }
 
             return (title, price);
+        }
+
+        /// <summary>
+        /// Tries to find the discounted ATB-card price, e.g. "250.06 з карткою ATБ".
+        /// Returns null when no such price is present on the page.
+        /// </summary>
+        private static string? TryExtractCardPrice(string cleanedText)
+        {
+            var match = AtbCardPriceRegex.Match(cleanedText);
+            return match.Success ? match.Groups["price"].Value : null;
+        }
+
+        /// <summary>
+        /// Fallback: returns the first price followed by "грн /", e.g. "263.50 грн/шт".
+        /// </summary>
+        private static string? TryExtractRegularPrice(string cleanedText)
+        {
+            return PriceWithCurrencyRegex
+                .Matches(cleanedText)
+                .Select(m => m.Groups["price"].Value)
+                .FirstOrDefault();
+        }
+
+        private static string CleanText(string? text) =>
+            Regex.Replace(
+                HtmlEntity.DeEntitize(text ?? string.Empty),
+                @"\s+",
+                " ")
+            .Trim();
+
+        private static string NormalizePrice(string priceText) =>
+            Regex.Replace(priceText, @"\s", string.Empty)
+                .Replace(",", ".");
+
+        private static string NormalizeMarkdownTitle(string title)
+        {
+            var cleanTitle = CleanText(
+                Regex.Replace(
+                    title,
+                    @"!\[[^\]]*\]\([^)]+\)|\[[^\]]*\]\([^)]+\)",
+                    string.Empty));
+
+            cleanTitle = cleanTitle.TrimStart('\u27a4').Trim();
+
+            var buyIndex = cleanTitle.IndexOf(
+                " купити ",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (buyIndex > 0)
+                cleanTitle = cleanTitle[..buyIndex].Trim();
+
+            var starIndex = cleanTitle.IndexOf(
+                " ★ ",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (starIndex > 0)
+                cleanTitle = cleanTitle[..starIndex].Trim();
+
+            return cleanTitle;
+        }
+
+        private static HttpClient CreateJinaHttpClient()
+        {
+            var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All
+            };
+
+            var http = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(15)
+            };
+
+            http.DefaultRequestHeaders.UserAgent.ParseAdd(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/125.0.0.0 Safari/537.36");
+
+            return http;
         }
     }
 }
