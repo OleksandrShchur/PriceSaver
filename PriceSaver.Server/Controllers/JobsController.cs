@@ -28,6 +28,7 @@ namespace PriceSaver.Server.Controllers
             }
 
             await _checker.CheckAllAsync();
+
             return Ok(new { status = "started" });
         }
     }

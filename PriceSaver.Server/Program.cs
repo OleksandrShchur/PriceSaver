@@ -36,7 +36,6 @@ builder.Services.AddSingleton<IPriceParser, EpicentrPriceParser>();
 builder.Services.AddSingleton<TelegramService>();
 builder.Services.AddSingleton<ITelegramService>(sp => sp.GetRequiredService<TelegramService>());
 builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
-builder.Services.AddHostedService<TelegramBotHostedService>();
 
 // Price checker
 builder.Services.AddScoped<PriceCheckerService>();
