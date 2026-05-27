@@ -18,6 +18,7 @@ namespace PriceSaver.Server.Controllers
         public IActionResult GetForUser(long telegramId)
         {
             var subs = _db.Subscriptions.Where(s => s.UserId == telegramId).ToList();
+
             return Ok(subs);
         }
 
@@ -25,9 +26,13 @@ namespace PriceSaver.Server.Controllers
         public async Task<IActionResult> Delete(Guid id)
         {
             var sub = await _db.Subscriptions.FindAsync(id);
-            if (sub == null) return NotFound();
+
+            if (sub == null)
+                return NotFound();
+
             sub.IsActive = false;
             await _db.SaveChangesAsync();
+
             return NoContent();
         }
     }
