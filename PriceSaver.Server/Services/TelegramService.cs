@@ -24,6 +24,7 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
+
                 return;
             }
 
