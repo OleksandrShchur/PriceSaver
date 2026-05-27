@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using PriceSaver.Server.Handlers;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
 using PriceSaver.Server.Services;
@@ -35,10 +36,14 @@ builder.Services.AddSingleton<IPriceParser, EpicentrPriceParser>();
 // Telegram bot hosted service
 builder.Services.AddSingleton<TelegramService>();
 builder.Services.AddSingleton<ITelegramService>(sp => sp.GetRequiredService<TelegramService>());
-builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
 
-// Price checker
+// Register handlers
+builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
+builder.Services.AddScoped<ISubscriptionHandler, SubscriptionHandler>();
+
+// Register services
 builder.Services.AddScoped<PriceCheckerService>();
+builder.Services.AddScoped<IUserService, UserService>();
 
 // Logging
 builder.Host.UseSerilog((ctx, lc) => lc.WriteTo.Console());

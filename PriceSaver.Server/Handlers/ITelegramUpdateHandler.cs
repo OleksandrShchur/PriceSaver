@@ -1,6 +1,6 @@
 using Telegram.Bot.Types;
 
-namespace PriceSaver.Server.Services
+namespace PriceSaver.Server.Handlers
 {
     public interface ITelegramUpdateHandler
     {
