@@ -12,10 +12,13 @@ namespace PriceSaver.Server.Parsers
         private static readonly Regex MarkdownHeadingRegex =
             new(@"^#+\s+(?<title>.+)$", RegexOptions.Compiled);
 
+        // Matches: "250.06 з карткою ATБ" (price comes BEFORE the card label)
+        // Handles mixed Latin/Cyrillic: A/А, T/Т are often Latin on the ATB site
         private static readonly Regex AtbCardPriceRegex = new(
-            @"\u043a\u0430\u0440\u0442\u043a\u043e\u044e\s+\u0410\u0422\u0411[^\d]*(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)",
+            @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s+з\s+карткою\s+[AА][TТ][БB]",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
+        // Fallback: "263.50 грн /"  or  "263.50 грн/шт"
         private static readonly Regex PriceWithCurrencyRegex = new(
             @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s*\u0433\u0440\u043d\s*/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
@@ -27,9 +30,7 @@ namespace PriceSaver.Server.Parsers
         public bool CanParse(string url)
         {
             if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            {
                 return false;
-            }
 
             return uri.Host.Equals("atbmarket.com", StringComparison.OrdinalIgnoreCase)
                 || uri.Host.Equals("www.atbmarket.com", StringComparison.OrdinalIgnoreCase)
@@ -44,7 +45,6 @@ namespace PriceSaver.Server.Parsers
             CancellationToken ct = default)
         {
             var text = await DownloadProductTextWithReaderAsync(url, ct);
-
             return ParseProductText(text);
         }
 
@@ -57,11 +57,10 @@ namespace PriceSaver.Server.Parsers
 
             request.Headers.Accept.ParseAdd("text/plain");
 
-            using var response =
-                await JinaHttp.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    ct);
+            using var response = await JinaHttp.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
 
             response.EnsureSuccessStatusCode();
 
@@ -71,40 +70,27 @@ namespace PriceSaver.Server.Parsers
         private static (string Name, decimal Price) ParseProductText(string text)
         {
             if (string.IsNullOrWhiteSpace(text))
-            {
-                throw new InvalidOperationException(
-                    "ATB product page text was empty.");
-            }
+                throw new InvalidOperationException("ATB product page text was empty.");
 
+            // ── Title ──────────────────────────────────────────────────────────
             var title = text
-                .Split(
-                    '\n',
-                    StringSplitOptions.RemoveEmptyEntries
-                    | StringSplitOptions.TrimEntries)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(line => MarkdownHeadingRegex.Match(line))
-                .Where(match => match.Success)
-                .Select(match =>
-                    NormalizeMarkdownTitle(match.Groups["title"].Value))
-                .FirstOrDefault(candidate =>
-                    !string.IsNullOrWhiteSpace(candidate));
+                .Where(m => m.Success)
+                .Select(m => NormalizeMarkdownTitle(m.Groups["title"].Value))
+                .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c));
 
             if (string.IsNullOrWhiteSpace(title))
-            {
-                throw new InvalidOperationException(
-                    "ATB product title was not found.");
-            }
+                throw new InvalidOperationException("ATB product title was not found.");
 
-            var priceText = ExtractAtbCardPriceText(text)
-                ?? PriceWithCurrencyRegex
-                    .Matches(text)
-                    .Select(match => match.Groups["price"].Value)
-                    .FirstOrDefault();
+            // ── Price: prefer ATB-card price, fall back to regular price ───────
+            var cleanedText = CleanText(text);
+
+            var priceText = TryExtractCardPrice(cleanedText)
+                ?? TryExtractRegularPrice(cleanedText);
 
             if (string.IsNullOrWhiteSpace(priceText))
-            {
-                throw new InvalidOperationException(
-                    "ATB product price was not found.");
-            }
+                throw new InvalidOperationException("ATB product price was not found.");
 
             if (!decimal.TryParse(
                     NormalizePrice(priceText),
@@ -119,13 +105,25 @@ namespace PriceSaver.Server.Parsers
             return (title, price);
         }
 
-        private static string? ExtractAtbCardPriceText(string text)
+        /// <summary>
+        /// Tries to find the discounted ATB-card price, e.g. "250.06 з карткою ATБ".
+        /// Returns null when no such price is present on the page.
+        /// </summary>
+        private static string? TryExtractCardPrice(string cleanedText)
         {
-            var match = AtbCardPriceRegex.Match(CleanText(text));
+            var match = AtbCardPriceRegex.Match(cleanedText);
+            return match.Success ? match.Groups["price"].Value : null;
+        }
 
-            return match.Success
-                ? match.Groups["price"].Value
-                : null;
+        /// <summary>
+        /// Fallback: returns the first price followed by "грн /", e.g. "263.50 грн/шт".
+        /// </summary>
+        private static string? TryExtractRegularPrice(string cleanedText)
+        {
+            return PriceWithCurrencyRegex
+                .Matches(cleanedText)
+                .Select(m => m.Groups["price"].Value)
+                .FirstOrDefault();
         }
 
         private static string CleanText(string? text) =>
@@ -154,18 +152,14 @@ namespace PriceSaver.Server.Parsers
                 StringComparison.OrdinalIgnoreCase);
 
             if (buyIndex > 0)
-            {
                 cleanTitle = cleanTitle[..buyIndex].Trim();
-            }
 
             var starIndex = cleanTitle.IndexOf(
                 " ★ ",
                 StringComparison.OrdinalIgnoreCase);
 
             if (starIndex > 0)
-            {
                 cleanTitle = cleanTitle[..starIndex].Trim();
-            }
 
             return cleanTitle;
         }
