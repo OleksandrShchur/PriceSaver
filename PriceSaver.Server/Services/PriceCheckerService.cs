@@ -45,14 +45,17 @@ namespace PriceSaver.Server.Services
                         await _db.SaveChangesAsync(ct);
 
                         var percent = old == 0 ? 100 : Math.Round((double)((price - old) / old * 100M), 2);
-                        var text = $"Price changed for {name}: {old} UAH → {price} UAH ({percent}% )\n{sub.ProductUrl}";
 
-                        if (price > old && !sub.NotifyOnIncrease)
+                        if (price > old && sub.NotifyOnIncrease)
                         {
-                            // skip notify on increase if user disabled
+                            var text = $"Price increased for {name}: {old} UAH → {price} UAH (+{percent}% )\n{sub.ProductUrl}";
+
+                            await _telegram.SendMessageAsync(sub.UserId, text);
                         }
                         else
                         {
+                            var text = $"Price decreased for {name}: {old} UAH → {price} UAH ({percent}% )\n{sub.ProductUrl}";
+
                             await _telegram.SendMessageAsync(sub.UserId, text);
                         }
                     }
