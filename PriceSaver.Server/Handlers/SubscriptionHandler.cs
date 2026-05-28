@@ -42,7 +42,7 @@ namespace PriceSaver.Server.Handlers
 
             if (subscriptions.Count == 0)
             {
-                await _telegram.SendMessageAsync(chatId, "You have no active subscriptions.", cancellationToken);
+                await _telegram.SendMessageAsync(chatId, "У Вас немає активних підписок.", cancellationToken);
                 return;
             }
 
@@ -56,34 +56,10 @@ namespace PriceSaver.Server.Handlers
                 await _telegram.SendMessageWithInlineButtonAsync(
                     chatId,
                     message,
-                    "🗑️ Remove",
+                    "🗑️ Видалити",
                     $"sub_remove_{subscription.Id}",
                     cancellationToken);
             }
-        }
-
-        public async Task DeleteSubscriptionAsync(long chatId, string text, CancellationToken cancellationToken)
-        {
-            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            if (parts.Length < 2 || !Guid.TryParse(parts[1], out var subscriptionId))
-            {
-                await _telegram.SendMessageAsync(chatId, "Use /delete_subscription <subscription_id>.", cancellationToken);
-                return;
-            }
-
-            var subscription = await _db.Subscriptions
-                .FirstOrDefaultAsync(item => item.Id == subscriptionId && item.UserId == chatId && item.IsActive, cancellationToken);
-
-            if (subscription is null)
-            {
-                await _telegram.SendMessageAsync(chatId, "Subscription was not found.", cancellationToken);
-                return;
-            }
-
-            subscription.IsActive = false;
-            await _db.SaveChangesAsync(cancellationToken);
-
-            await _telegram.SendMessageAsync(chatId, "Subscription deleted.", cancellationToken);
         }
 
         public async Task HandleRemoveSubscriptionCallbackAsync(long chatId, string callbackQueryId, string subscriptionId, int messageId, CancellationToken cancellationToken)
@@ -92,7 +68,7 @@ namespace PriceSaver.Server.Handlers
             {
                 if (!Guid.TryParse(subscriptionId, out var subscriptionGuid))
                 {
-                    await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Invalid subscription ID.", true, cancellationToken);
+                    await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Некоректний Id підписки.", true, cancellationToken);
                     return;
                 }
 
@@ -101,7 +77,7 @@ namespace PriceSaver.Server.Handlers
 
                 if (subscription is null)
                 {
-                    await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Subscription already removed.", true, cancellationToken);
+                    await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Підписку видалено раніше.", true, cancellationToken);
                     return;
                 }
 
@@ -109,12 +85,12 @@ namespace PriceSaver.Server.Handlers
                 await _db.SaveChangesAsync(cancellationToken);
 
                 await _telegram.DeleteMessageAsync(chatId, messageId, cancellationToken);
-                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "✅ Subscription removed.", false, cancellationToken);
+                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "✅ Підписку видалено.", false, cancellationToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle remove subscription callback for chat {ChatId} and subscription {SubscriptionId}", chatId, subscriptionId);
-                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Error removing subscription.", true, cancellationToken);
+                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Помилка при видаленні підписки.", true, cancellationToken);
             }
         }
 
@@ -123,7 +99,7 @@ namespace PriceSaver.Server.Handlers
             var parser = _parsers.FirstOrDefault(candidate => candidate.CanParse(url));
             if (parser is null)
             {
-                await _telegram.SendMessageAsync(chatId, "That store is not supported yet.", cancellationToken);
+                await _telegram.SendMessageAsync(chatId, "Вказаний магазин ще не підтримується нами.", cancellationToken);
                 return;
             }
 
@@ -132,7 +108,7 @@ namespace PriceSaver.Server.Handlers
 
             if (activeSubscriptionCount >= _options.MaxSubscriptionsPerUser)
             {
-                await _telegram.SendMessageAsync(chatId, $"Subscription limit reached ({_options.MaxSubscriptionsPerUser}).", cancellationToken);
+                await _telegram.SendMessageAsync(chatId, $"Досягнуто ліміту підписок ({_options.MaxSubscriptionsPerUser}).", cancellationToken);
                 return;
             }
 
@@ -156,7 +132,7 @@ namespace PriceSaver.Server.Handlers
                 _db.Subscriptions.Add(subscription);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                var confirmationMessage = $"✅ Subscription created!\n\n" +
+                var confirmationMessage = $"✅ Підписку створено!\n\n" +
                                         $"📦 {name}\n" +
                                         $"🏪 {storeType} - {price:0.##} UAH\n" +
                                         $"🔗 {url}";
@@ -166,7 +142,7 @@ namespace PriceSaver.Server.Handlers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create Telegram subscription for chat {ChatId} and url {Url}", chatId, url);
-                await _telegram.SendMessageAsync(chatId, "Could not read product details from that link.", cancellationToken);
+                await _telegram.SendMessageAsync(chatId, "Неможливо отримати інформацію про продукт за посиланням.", cancellationToken);
             }
         }
 

@@ -54,13 +54,13 @@ namespace PriceSaver.Server.Handlers
             }
 
             if (text.StartsWith("/my_subscriptions", StringComparison.OrdinalIgnoreCase) ||
-                text.Equals("📋 Manage subscriptions", StringComparison.OrdinalIgnoreCase))
+                text.Equals("📋 Мої підписки", StringComparison.OrdinalIgnoreCase))
             {
                 await _subscriptionHandler.SendSubscriptionsAsync(chatId, cancellationToken);
                 return;
             }
 
-            if (text.Equals("❓ Instructions", StringComparison.OrdinalIgnoreCase))
+            if (text.Equals("❓ Інструкції", StringComparison.OrdinalIgnoreCase))
             {
                 await SendInstructionsAsync(chatId, cancellationToken);
                 return;
@@ -74,7 +74,7 @@ namespace PriceSaver.Server.Handlers
 
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
-                "📌 Send a direct product link from ATB, Silpo, Metro, or Epicentr to track its price.",
+                "📌 Надішліть пряме посилання на продукт з ATB, щоб відстежувати його ціну.",
                 GetMainKeyboard(),
                 cancellationToken);
         }
@@ -99,18 +99,18 @@ namespace PriceSaver.Server.Handlers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle callback query {CallbackData}", callbackQuery.Data);
-                await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "An error occurred.", true, cancellationToken);
+                await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Сталася помилка.", true, cancellationToken);
             }
         }
 
         private async Task SendWelcomeMessageAsync(long chatId, CancellationToken cancellationToken)
         {
-            var welcomeText = $"👋 Welcome to {_options.BotDisplayName}!\n\n" +
-                            "📌 *How to use:*\n" +
-                            "1. Send a product link from ATB, Silpo, Metro, or Epicentr\n" +
-                            "2. The bot will track price changes for you\n" +
-                            "3. Use the buttons below to manage your subscriptions\n\n" +
-                            "📦 You can have up to " + _options.MaxSubscriptionsPerUser + " active subscriptions.";
+            var welcomeText = $"👋 Ласкаво просимо до {_options.BotDisplayName}!\n\n" +
+                            "📌 *Як користуватися:*\n" +
+                            "1. Надішліть посилання на продукт з ATB\n" +
+                            "2. Бот буде відстежувати зміни цін для вас\n" +
+                            "3. Використовуйте кнопки нижче, щоб керувати своїми підписками\n\n" +
+                            "📦 Ви можете мати до " + _options.MaxSubscriptionsPerUser + " активних підписок.";
 
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
@@ -121,17 +121,13 @@ namespace PriceSaver.Server.Handlers
 
         private async Task SendInstructionsAsync(long chatId, CancellationToken cancellationToken)
         {
-            var instructionsText = "❓ *Supported Stores:*\n\n" +
-                                 "🏪 ATB - https://www.atb.ua\n" +
-                                 "🏪 Silpo - https://www.silpo.ua\n" +
-                                 "🏪 Metro - https://www.metro.ua\n" +
-                                 "🏪 Epicentr - https://www.epicentr.ua\n\n" +
-                                 "*How to:*\n" +
-                                 "• Send any product link to start tracking\n" +
-                                 "• Use 📋 *Manage subscriptions* to view your tracked items\n" +
-                                 "• Click 🗑️ *Remove* button to delete a subscription\n" +
-                                 "Questions? Just send a product link! 🚀";
-
+            var instructionsText = "❓ *Підтримувані магазини:*\n\n" +
+                                 "🏪 ATB - https://www.atbmarket.com/\n\n" +
+                                 "*Як користуватися:*\n" +
+                                 "• Надішліть будь-яке посилання на продукт, щоб почати відстеження\n" +
+                                 "• Використовуйте 📋 *Мої підписки*, щоб переглянути ваші відстежувані товари\n" +
+                                 "• Натисніть 🗑️ *Видалити*, щоб видалити підписку\n" +
+                                 "Питання? Просто надішліть посилання на продукт! 🚀";
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
                 instructionsText,
@@ -144,7 +140,7 @@ namespace PriceSaver.Server.Handlers
             return new ReplyKeyboardMarkup(
                 new[]
                 {
-                    new[] { new KeyboardButton("📋 Manage subscriptions"), new KeyboardButton("❓ Instructions") }
+                    new[] { new KeyboardButton("📋 Мої підписки"), new KeyboardButton("❓ Інструкції") }
                 })
             {
                 ResizeKeyboard = true,
