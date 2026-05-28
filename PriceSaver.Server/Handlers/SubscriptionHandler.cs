@@ -173,9 +173,6 @@ namespace PriceSaver.Server.Handlers
         private static StoreType InferStoreType(string key) => key.ToLowerInvariant() switch
         {
             "atb" => StoreType.ATB,
-            "silpo" => StoreType.Silpo,
-            "metro" => StoreType.Metro,
-            "epicentr" => StoreType.Epicentr,
             _ => StoreType.Unknown
         };
     }
