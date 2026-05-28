@@ -3,7 +3,6 @@
     public interface ISubscriptionHandler
     {
         Task SendSubscriptionsAsync(long chatId, CancellationToken cancellationToken);
-        Task DeleteSubscriptionAsync(long chatId, string text, CancellationToken cancellationToken);
         Task CreateSubscriptionAsync(long chatId, string? username, string url, CancellationToken cancellationToken);
         Task HandleRemoveSubscriptionCallbackAsync(long chatId, string callbackQueryId, string subscriptionId, int messageId, CancellationToken cancellationToken);
     }

@@ -48,13 +48,13 @@ namespace PriceSaver.Server.Services
 
                         if (price > old && sub.NotifyOnIncrease)
                         {
-                            var text = $"Price increased for {name}: {old} UAH → {price} UAH (+{percent}% )\n{sub.ProductUrl}";
+                            var text = $"📈 Ціна зросла для {name}: {old} UAH → {price} UAH (+{percent}% )\n{sub.ProductUrl}";
 
                             await _telegram.SendMessageAsync(sub.UserId, text);
                         }
                         else
                         {
-                            var text = $"Price decreased for {name}: {old} UAH → {price} UAH ({percent}% )\n{sub.ProductUrl}";
+                            var text = $"📉 Ціна знизилася для {name}: {old} UAH → {price} UAH ({percent}% )\n{sub.ProductUrl}";
 
                             await _telegram.SendMessageAsync(sub.UserId, text);
                         }
