@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Data;
+using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Models;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
@@ -49,7 +50,7 @@ namespace PriceSaver.Server.Handlers
             foreach (var subscription in subscriptions)
             {
                 var message = $"📦 {subscription.ProductName}\n\n" +
-                             $"🏪 {subscription.StoreType}\n" +
+                             $"🏪 {subscription.StoreType.GetDescription()}\n" +
                              $"💰 {subscription.CurrentPrice:0.##} UAH\n\n" +
                              $"🔗 {subscription.ProductUrl}";
 

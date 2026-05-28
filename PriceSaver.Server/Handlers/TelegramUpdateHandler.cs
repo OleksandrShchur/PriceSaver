@@ -35,6 +35,7 @@ namespace PriceSaver.Server.Handlers
             if (update.CallbackQuery is { Data: not null } callbackQuery)
             {
                 await HandleCallbackQueryAsync(callbackQuery, cancellationToken);
+
                 return;
             }
 
@@ -50,6 +51,7 @@ namespace PriceSaver.Server.Handlers
             {
                 await _userService.EnsureUserExistsAsync(chatId, message.From?.Username, cancellationToken);
                 await SendWelcomeMessageAsync(chatId, cancellationToken);
+
                 return;
             }
 
@@ -57,18 +59,22 @@ namespace PriceSaver.Server.Handlers
                 text.Equals("📋 Мої підписки", StringComparison.OrdinalIgnoreCase))
             {
                 await _subscriptionHandler.SendSubscriptionsAsync(chatId, cancellationToken);
+
                 return;
             }
 
             if (text.Equals("❓ Інструкції", StringComparison.OrdinalIgnoreCase))
             {
                 await SendInstructionsAsync(chatId, cancellationToken);
+
                 return;
             }
 
             if (Uri.TryCreate(text, UriKind.Absolute, out var uri))
             {
+                await _telegram.SendMessageAsync(chatId, "🔍 Перевіряємо посилання...", cancellationToken);
                 await _subscriptionHandler.CreateSubscriptionAsync(chatId, message.From?.Username, uri.ToString(), cancellationToken);
+                
                 return;
             }
 
@@ -122,7 +128,7 @@ namespace PriceSaver.Server.Handlers
         private async Task SendInstructionsAsync(long chatId, CancellationToken cancellationToken)
         {
             var instructionsText = "❓ *Підтримувані магазини:*\n\n" +
-                                 "🏪 ATB - https://www.atbmarket.com/\n\n" +
+                                 "🏪 ATБ - https://www.atbmarket.com/\n\n" +
                                  "*Як користуватися:*\n" +
                                  "• Надішліть будь-яке посилання на продукт, щоб почати відстеження\n" +
                                  "• Використовуйте 📋 *Мої підписки*, щоб переглянути ваші відстежувані товари\n" +
@@ -140,7 +146,8 @@ namespace PriceSaver.Server.Handlers
             return new ReplyKeyboardMarkup(
                 new[]
                 {
-                    new[] { new KeyboardButton("📋 Мої підписки"), new KeyboardButton("❓ Інструкції") }
+                    new[] { new KeyboardButton("📋 Мої підписки") },
+                    new[] { new KeyboardButton("❓ Інструкції") }
                 })
             {
                 ResizeKeyboard = true,
