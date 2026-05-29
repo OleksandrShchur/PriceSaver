@@ -104,6 +104,25 @@ namespace PriceSaver.Server.Handlers
 
         public async Task CreateSubscriptionAsync(long chatId, string? username, string url, CancellationToken cancellationToken)
         {
+            var existingSubscription = await _db.Subscriptions
+                .FirstOrDefaultAsync(
+                    s => s.UserId == chatId && s.ProductUrl == url && s.IsActive,
+                    cancellationToken);
+
+            if (existingSubscription is not null)
+            {
+                var safeExistingName = WebUtility.HtmlEncode(existingSubscription.ProductName);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    $"ℹ️ <b>Ця підписка вже існує у Вашому списку.</b>\n\n" +
+                    $"📦 <b>{safeExistingName}</b>\n" +
+                    $"💰 <b>Поточна ціна:</b> <code>{existingSubscription.CurrentPrice:0.##}</code> UAH\n\n" +
+                    $"🔗 <a href=\"{existingSubscription.ProductUrl}\">Перейти до товару</a>",
+                    cancellationToken);
+
+                return;
+            }
+
             var parser = _parsers.FirstOrDefault(candidate => candidate.CanParse(url));
             if (parser is null)
             {
@@ -111,6 +130,7 @@ namespace PriceSaver.Server.Handlers
                     chatId,
                     "❌ <b>Вказаний магазин ще не підтримується нами.</b>",
                     cancellationToken);
+
                 return;
             }
 
