@@ -48,6 +48,7 @@ namespace PriceSaver.Server.Handlers
                     chatId,
                     "⚠️ <b>У Вас немає активних підписок.</b>",
                     cancellationToken);
+
                 return;
             }
 
@@ -77,6 +78,7 @@ namespace PriceSaver.Server.Handlers
                 if (!Guid.TryParse(subscriptionId, out var subscriptionGuid))
                 {
                     await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Некоректний Id підписки.", true, cancellationToken);
+                    
                     return;
                 }
 
@@ -86,6 +88,7 @@ namespace PriceSaver.Server.Handlers
                 if (subscription is null)
                 {
                     await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Підписку видалено раніше.", true, cancellationToken);
+                    
                     return;
                 }
 
@@ -143,6 +146,7 @@ namespace PriceSaver.Server.Handlers
                     chatId,
                     $"🚫 <b>Досягнуто ліміту підписок!</b>\nМаксимально дозволено: <code>{_options.MaxSubscriptionsPerUser}</code>.",
                     cancellationToken);
+
                 return;
             }
 
@@ -153,17 +157,32 @@ namespace PriceSaver.Server.Handlers
                 var (name, price) = await parser.ParseAsync(url, cancellationToken);
                 var storeType = InferStoreType(parser.StoreKey);
 
-                var subscription = new Subscription
-                {
-                    UserId = chatId,
-                    ProductUrl = url,
-                    StoreType = storeType,
-                    ProductName = name,
-                    CurrentPrice = price,
-                    LastCheckedDate = DateTime.UtcNow
-                };
+                // Reactivate inactive subscription if one exists
+                var inactiveSubscription = await _db.Subscriptions
+                    .FirstOrDefaultAsync(
+                        s => s.UserId == chatId && s.ProductUrl == url && !s.IsActive,
+                        cancellationToken);
 
-                _db.Subscriptions.Add(subscription);
+                if (inactiveSubscription is not null)
+                {
+                    inactiveSubscription.IsActive = true;
+                    inactiveSubscription.ProductName = name;
+                    inactiveSubscription.CurrentPrice = price;
+                    inactiveSubscription.LastCheckedDate = DateTime.UtcNow;
+                }
+                else
+                {
+                    _db.Subscriptions.Add(new Subscription
+                    {
+                        UserId = chatId,
+                        ProductUrl = url,
+                        StoreType = storeType,
+                        ProductName = name,
+                        CurrentPrice = price,
+                        LastCheckedDate = DateTime.UtcNow
+                    });
+                }
+
                 await _db.SaveChangesAsync(cancellationToken);
 
                 var safeName = WebUtility.HtmlEncode(name);
