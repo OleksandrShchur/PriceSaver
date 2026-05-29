@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Net;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Data;
 using PriceSaver.Server.Extensions;
@@ -43,16 +44,22 @@ namespace PriceSaver.Server.Handlers
 
             if (subscriptions.Count == 0)
             {
-                await _telegram.SendMessageAsync(chatId, "У Вас немає активних підписок.", cancellationToken);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    "⚠️ <b>У Вас немає активних підписок.</b>",
+                    cancellationToken);
                 return;
             }
 
             foreach (var subscription in subscriptions)
             {
-                var message = $"📦 {subscription.ProductName}\n\n" +
-                             $"🏪 {subscription.StoreType.GetDescription()}\n" +
-                             $"💰 {subscription.CurrentPrice:0.##} UAH\n\n" +
-                             $"🔗 {subscription.ProductUrl}";
+                var safeProductName = WebUtility.HtmlEncode(subscription.ProductName);
+                var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
+
+                var message = $"📦 <b>{safeProductName}</b>\n\n" +
+                              $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
+                              $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n\n" +
+                              $"🔗 <a href=\"{subscription.ProductUrl}\">Перейти до товару</a>";
 
                 await _telegram.SendMessageWithInlineButtonAsync(
                     chatId,
@@ -100,7 +107,10 @@ namespace PriceSaver.Server.Handlers
             var parser = _parsers.FirstOrDefault(candidate => candidate.CanParse(url));
             if (parser is null)
             {
-                await _telegram.SendMessageAsync(chatId, "Вказаний магазин ще не підтримується нами.", cancellationToken);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    "❌ <b>Вказаний магазин ще не підтримується нами.</b>",
+                    cancellationToken);
                 return;
             }
 
@@ -109,7 +119,10 @@ namespace PriceSaver.Server.Handlers
 
             if (activeSubscriptionCount >= _options.MaxSubscriptionsPerUser)
             {
-                await _telegram.SendMessageAsync(chatId, $"Досягнуто ліміту підписок ({_options.MaxSubscriptionsPerUser}).", cancellationToken);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    $"🚫 <b>Досягнуто ліміту підписок!</b>\nМаксимально дозволено: <code>{_options.MaxSubscriptionsPerUser}</code>.",
+                    cancellationToken);
                 return;
             }
 
@@ -133,17 +146,22 @@ namespace PriceSaver.Server.Handlers
                 _db.Subscriptions.Add(subscription);
                 await _db.SaveChangesAsync(cancellationToken);
 
-                var confirmationMessage = $"✅ Підписку створено!\n\n" +
-                                        $"📦 {name}\n" +
-                                        $"🏪 {storeType} - {price:0.##} UAH\n" +
-                                        $"🔗 {url}";
+                var safeName = WebUtility.HtmlEncode(name);
+                var confirmationMessage = $"✅ <b>Підписку створено!</b>\n\n" +
+                                          $"📦 <b>{safeName}</b>\n" +
+                                          $"🏪 <b>Магазин:</b> {storeType}\n" +
+                                          $"💰 <b>Ціна:</b> <code>{price:0.##}</code> UAH\n\n" +
+                                          $"🔗 <a href=\"{url}\">Перейти до товару</a>";
 
                 await _telegram.SendMessageAsync(chatId, confirmationMessage, cancellationToken);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to create Telegram subscription for chat {ChatId} and url {Url}", chatId, url);
-                await _telegram.SendMessageAsync(chatId, "Неможливо отримати інформацію про продукт за посиланням.", cancellationToken);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    "❌ <b>Неможливо отримати інформацію про продукт за посиланням.</b>\nБудь ласка, перевірте правильність посилання.",
+                    cancellationToken);
             }
         }
 
