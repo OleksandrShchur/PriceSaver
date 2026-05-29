@@ -190,3 +190,4 @@ x86/
 *.vsix
 pricesaver.client/.vscode
 PriceSaver.Server/appsettings.Development.json
+PriceSaver.Server/appsettings.Production.json
