@@ -46,6 +46,7 @@ builder.Services.AddScoped<ISubscriptionHandler, SubscriptionHandler>();
 // Register services
 builder.Services.AddScoped<PriceCheckerService>();
 builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 // Logging
 builder.Host.UseSerilog((ctx, lc) => lc.WriteTo.Console());
