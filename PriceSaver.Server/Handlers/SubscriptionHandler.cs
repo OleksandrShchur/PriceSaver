@@ -118,7 +118,7 @@ namespace PriceSaver.Server.Handlers
             var safeName = WebUtility.HtmlEncode(subscription.ProductName);
             return $"✅ <b>Підписку створено!</b>\n\n" +
                    $"📦 <b>{safeName}</b>\n" +
-                   $"🏪 <b>Магазин:</b> {subscription.StoreType}\n" +
+                   $"🏪 <b>Магазин:</b> {subscription.StoreType.GetDescription()}\n" +
                    $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n\n" +
                    $"🔗 <a href=\"{subscription.ProductUrl}\">Перейти до товару</a>";
         }
