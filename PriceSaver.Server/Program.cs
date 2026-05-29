@@ -21,7 +21,9 @@ builder.Services
 
 builder.Services
     .AddOptions<JobsOptions>()
-    .Bind(builder.Configuration.GetSection(JobsOptions.SectionName));
+    .Bind(builder.Configuration.GetSection(JobsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
 
 // configuration for DB and services
 builder.Services.AddDbContext<PriceSaver.Server.Data.ApplicationDbContext>(options =>

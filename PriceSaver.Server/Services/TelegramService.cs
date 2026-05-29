@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Options;
 using Telegram.Bot;
+using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace PriceSaver.Server.Services
@@ -29,7 +30,7 @@ namespace PriceSaver.Server.Services
                 return;
             }
 
-            await Client.SendTextMessageAsync(chatId, text, cancellationToken: cancellationToken);
+            await Client.SendTextMessageAsync(chatId, text, cancellationToken: cancellationToken, parseMode: ParseMode.Html);
         }
 
         public async Task SendMessageWithKeyboardAsync(long chatId, string text, IReplyMarkup replyMarkup, CancellationToken cancellationToken = default)
@@ -41,7 +42,8 @@ namespace PriceSaver.Server.Services
                 return;
             }
 
-            await Client.SendTextMessageAsync(chatId, text, replyMarkup: replyMarkup, cancellationToken: cancellationToken);
+            await Client.SendTextMessageAsync(chatId, text, replyMarkup: replyMarkup, cancellationToken: cancellationToken,
+                parseMode: ParseMode.Html);
         }
 
         public async Task SendMessageWithInlineButtonAsync(long chatId, string text, string buttonLabel, string callbackData, CancellationToken cancellationToken = default)
@@ -56,7 +58,8 @@ namespace PriceSaver.Server.Services
             var inlineKeyboard = new InlineKeyboardMarkup(
                 new[] { InlineKeyboardButton.WithCallbackData(buttonLabel, callbackData) });
 
-            await Client.SendTextMessageAsync(chatId, text, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken);
+            await Client.SendTextMessageAsync(chatId, text, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken,
+                parseMode: ParseMode.Html);
         }
 
         public async Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken = default)

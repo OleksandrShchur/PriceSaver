@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Services;
@@ -72,7 +73,11 @@ namespace PriceSaver.Server.Handlers
 
             if (Uri.TryCreate(text, UriKind.Absolute, out var uri))
             {
-                await _telegram.SendMessageAsync(chatId, "🔍 Перевіряємо посилання...", cancellationToken);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    "🔍 <i>Перевіряємо посилання, зачекайте хвилинку...</i>",
+                    cancellationToken);
+
                 await _subscriptionHandler.CreateSubscriptionAsync(chatId, message.From?.Username, uri.ToString(), cancellationToken);
                 
                 return;
@@ -80,7 +85,7 @@ namespace PriceSaver.Server.Handlers
 
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
-                "📌 Надішліть пряме посилання на продукт з ATB, щоб відстежувати його ціну.",
+                "📌 <b>Надішліть пряме посилання</b> на продукт з ATB, щоб почати відстежувати його ціну.",
                 GetMainKeyboard(),
                 cancellationToken);
         }
@@ -111,34 +116,36 @@ namespace PriceSaver.Server.Handlers
 
         private async Task SendWelcomeMessageAsync(long chatId, CancellationToken cancellationToken)
         {
-            var welcomeText = $"👋 Ласкаво просимо до {_options.BotDisplayName}!\n\n" +
-                            "📌 *Як користуватися:*\n" +
-                            "1. Надішліть посилання на продукт з ATB\n" +
-                            "2. Бот буде відстежувати зміни цін для вас\n" +
-                            "3. Використовуйте кнопки нижче, щоб керувати своїми підписками\n\n" +
-                            "📦 Ви можете мати до " + _options.MaxSubscriptionsPerUser + " активних підписок.";
+            var safeBotName = WebUtility.HtmlEncode(_options.BotDisplayName);
+            var welcomeText = $"👋 Ласкаво просимо до <b>{safeBotName}</b>!\n\n" +
+                              "📌 <b>Як користуватися:</b>\n" +
+                              "1️⃣ Надішліть посилання на продукт з ATB\n" +
+                              "2️⃣ Бот автоматично відстежуватиме зміни його ціни\n" +
+                              "3️⃣ Використовуйте меню нижче для керування вашими підписками\n\n" +
+                              $"📦 Ви можете мати до <code>{_options.MaxSubscriptionsPerUser}</code> активних підписок одночасно.";
 
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
                 welcomeText,
                 GetMainKeyboard(),
-                cancellationToken);
+                cancellationToken: cancellationToken);
         }
 
         private async Task SendInstructionsAsync(long chatId, CancellationToken cancellationToken)
         {
-            var instructionsText = "❓ *Підтримувані магазини:*\n\n" +
-                                 "🏪 ATБ - https://www.atbmarket.com/\n\n" +
-                                 "*Як користуватися:*\n" +
-                                 "• Надішліть будь-яке посилання на продукт, щоб почати відстеження\n" +
-                                 "• Використовуйте 📋 *Мої підписки*, щоб переглянути ваші відстежувані товари\n" +
-                                 "• Натисніть 🗑️ *Видалити*, щоб видалити підписку\n" +
-                                 "Питання? Просто надішліть посилання на продукт! 🚀";
+            var instructionsText = "❓ <b>Підтримувані магазини:</b>\n\n" +
+                                   "🏪 <a href=\"https://www.atbmarket.com/\">АТБ Маркет</a>\n\n" +
+                                   "📌 <b>Інструкція користувача:</b>\n" +
+                                   "• Надішліть будь-яке пряме посилання на товар, щоб увімкнути моніторинг\n" +
+                                   "• Натисніть 📋 <b>Мої підписки</b>, щоб побачити список ваших товарів\n" +
+                                   "• Використовуйте кнопку 🗑️ <b>Видалити</b> під товаром, щоб скасувати стеження\n\n" +
+                                   "🚀 <i>Залишилися питання? Просто надішліть посилання на товар!</i>";
+
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
                 instructionsText,
                 GetMainKeyboard(),
-                cancellationToken);
+                cancellationToken: cancellationToken);
         }
 
         private static IReplyMarkup GetMainKeyboard()

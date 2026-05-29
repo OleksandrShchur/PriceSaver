@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using PriceSaver.Server.Data;
 using PriceSaver.Server.Parsers;
@@ -41,22 +42,41 @@ namespace PriceSaver.Server.Services
                         sub.CurrentPrice = price;
                         sub.LastCheckedDate = DateTime.UtcNow;
 
-                        _db.PriceHistories.Add(new Models.PriceHistory { SubscriptionId = sub.Id, Price = price, CheckedAt = DateTime.UtcNow });
+                        _db.PriceHistories.Add(new Models.PriceHistory
+                        {
+                            SubscriptionId = sub.Id,
+                            Price = price,
+                            CheckedAt = DateTime.UtcNow
+                        });
+
                         await _db.SaveChangesAsync(ct);
 
                         var percent = old == 0 ? 100 : Math.Round((double)((price - old) / old * 100M), 2);
+                        var safeName = WebUtility.HtmlEncode(name);
 
                         if (price > old && sub.NotifyOnIncrease)
                         {
-                            var text = $"📈 Ціна зросла для {name}: {old} UAH → {price} UAH (+{percent}% )\n{sub.ProductUrl}";
+                            var text = $"📈 <b>Ціна зросла!</b>\n\n" +
+                                       $"📦 <b>{safeName}</b>\n" +
+                                       $"💰 <code>{old:0.##}</code> UAH → <code>{price:0.##}</code> UAH (<code>+{percent}%</code>)\n\n" +
+                                       $"🔗 <a href=\"{sub.ProductUrl}\">Перейти до товару</a>";
 
-                            await _telegram.SendMessageAsync(sub.UserId, text);
+                            await _telegram.SendMessageAsync(
+                                sub.UserId,
+                                text,
+                                cancellationToken: ct);
                         }
-                        else
+                        else if (price < old)
                         {
-                            var text = $"📉 Ціна знизилася для {name}: {old} UAH → {price} UAH ({percent}% )\n{sub.ProductUrl}";
+                            var text = $"📉 <b>Ціна знизилася!</b>\n\n" +
+                                       $"📦 <b>{safeName}</b>\n" +
+                                       $"💰 <code>{old:0.##}</code> UAH → <code>{price:0.##}</code> UAH (<code>{percent}%</code>)\n\n" +
+                                       $"🔗 <a href=\"{sub.ProductUrl}\">Перейти до товару</a>";
 
-                            await _telegram.SendMessageAsync(sub.UserId, text);
+                            await _telegram.SendMessageAsync(
+                                sub.UserId,
+                                text,
+                                cancellationToken: ct);
                         }
                     }
                 }
