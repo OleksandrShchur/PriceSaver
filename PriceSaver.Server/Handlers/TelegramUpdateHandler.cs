@@ -64,7 +64,8 @@ namespace PriceSaver.Server.Handlers
                 return;
             }
 
-            if (text.Equals("❓ Інструкції", StringComparison.OrdinalIgnoreCase))
+            if (text.StartsWith("/instructions", StringComparison.OrdinalIgnoreCase) || 
+                text.Equals("❓ Інструкції", StringComparison.OrdinalIgnoreCase))
             {
                 await SendInstructionsAsync(chatId, cancellationToken);
 
