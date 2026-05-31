@@ -7,6 +7,9 @@ namespace PriceSaver.Server.Models
         [Description("АТБ")]
         ATB,
 
+        [Description("Сільпо")]
+        Silpo,
+
         [Description("Невідомий")]
         Unknown
     }
