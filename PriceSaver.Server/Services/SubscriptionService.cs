@@ -122,6 +122,7 @@ namespace PriceSaver.Server.Services
         private static StoreType InferStoreType(string key) => key.ToLowerInvariant() switch
         {
             "atb" => StoreType.ATB,
+            "silpo" => StoreType.Silpo,
             _ => StoreType.Unknown
         };
     }

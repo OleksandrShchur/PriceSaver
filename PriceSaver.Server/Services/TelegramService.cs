@@ -26,11 +26,16 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
-
+                
                 return;
             }
 
-            await Client.SendTextMessageAsync(chatId, text, cancellationToken: cancellationToken, parseMode: ParseMode.Html);
+            await Client.SendTextMessageAsync(
+                chatId: chatId,
+                text: text,
+                parseMode: ParseMode.Html,
+                disableWebPagePreview: true,
+                cancellationToken: cancellationToken);
         }
 
         public async Task SendMessageWithKeyboardAsync(long chatId, string text, IReplyMarkup replyMarkup, CancellationToken cancellationToken = default)
@@ -38,12 +43,17 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
-
+                
                 return;
             }
 
-            await Client.SendTextMessageAsync(chatId, text, replyMarkup: replyMarkup, cancellationToken: cancellationToken,
-                parseMode: ParseMode.Html);
+            await Client.SendTextMessageAsync(
+                chatId: chatId,
+                text: text,
+                replyMarkup: replyMarkup,
+                parseMode: ParseMode.Html,
+                disableWebPagePreview: true,
+                cancellationToken: cancellationToken);
         }
 
         public async Task SendMessageWithInlineButtonAsync(long chatId, string text, string buttonLabel, string callbackData, CancellationToken cancellationToken = default)
@@ -51,15 +61,20 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
-
+                
                 return;
             }
 
             var inlineKeyboard = new InlineKeyboardMarkup(
                 new[] { InlineKeyboardButton.WithCallbackData(buttonLabel, callbackData) });
 
-            await Client.SendTextMessageAsync(chatId, text, replyMarkup: inlineKeyboard, cancellationToken: cancellationToken,
-                parseMode: ParseMode.Html);
+            await Client.SendTextMessageAsync(
+                chatId: chatId,
+                text: text,
+                replyMarkup: inlineKeyboard,
+                parseMode: ParseMode.Html,
+                disableWebPagePreview: true,
+                cancellationToken: cancellationToken);
         }
 
         public async Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken = default)
@@ -67,7 +82,7 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message deletion for chat {ChatId} was skipped.", chatId);
-
+                
                 return;
             }
 
