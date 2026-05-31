@@ -119,7 +119,7 @@ namespace PriceSaver.Server.Handlers
             var safeBotName = WebUtility.HtmlEncode(_options.BotDisplayName);
             var welcomeText = $"👋 Ласкаво просимо до <b>{safeBotName}</b>!\n\n" +
                               "📌 <b>Як користуватися:</b>\n" +
-                              "1️⃣ Надішліть посилання на продукт з ATB\n" +
+                              "1️⃣ Надішліть посилання на продукт з АТБ або Сільпо\n" +
                               "2️⃣ Бот автоматично відстежуватиме зміни його ціни\n" +
                               "3️⃣ Використовуйте меню нижче для керування вашими підписками\n\n" +
                               $"📦 Ви можете мати до <code>{_options.MaxSubscriptionsPerUser}</code> активних підписок одночасно.";
