@@ -8,6 +8,7 @@ namespace PriceSaver.Server.Parsers
     public class AtbPriceParser : IPriceParser
     {
         private const string JinaReaderBaseUrl = "https://r.jina.ai/";
+        private const string JinaNotFoundMarker = "error 404";
 
         private static readonly Regex MarkdownHeadingRegex =
             new(@"^#+\s+(?<title>.+)$", RegexOptions.Compiled);
@@ -45,6 +46,7 @@ namespace PriceSaver.Server.Parsers
             CancellationToken ct = default)
         {
             var text = await DownloadProductTextWithReaderAsync(url, ct);
+
             return ParseProductText(text);
         }
 
@@ -71,6 +73,11 @@ namespace PriceSaver.Server.Parsers
         {
             if (string.IsNullOrWhiteSpace(text))
                 throw new InvalidOperationException("ATB product page text was empty.");
+
+            // Jina returns HTTP 200 even when the target URL is 404;
+            // the error surfaces only in the body as "Warning: Target URL returned error 404".
+            if (text.Contains(JinaNotFoundMarker, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("ATB product page not found (404).");
 
             // ── Title ──────────────────────────────────────────────────────────
             var title = text
