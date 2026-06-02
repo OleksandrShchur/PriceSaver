@@ -43,8 +43,6 @@ namespace PriceSaver.Server.Parsers
             return ParseProduct(json, url);
         }
 
-        // ── helpers ────────────────────────────────────────────────────────────
-
         private sealed class PriceParseException(string message) : Exception(message);
 
         private string ExtractSlug(string url)
