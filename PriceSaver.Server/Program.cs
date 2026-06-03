@@ -31,7 +31,7 @@ builder.Services.AddDbContext<PriceSaver.Server.Data.ApplicationDbContext>(optio
 
 // Register parsers
 builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
-builder.Services.AddScoped<IPriceParser, SilpoPriceParser>();
+builder.Services.AddSingleton<IPriceParser, SilpoPriceParser>();
 builder.Services.AddSingleton<IPriceParser, MetroPriceParser>();
 builder.Services.AddSingleton<IPriceParser, EpicentrPriceParser>();
 
