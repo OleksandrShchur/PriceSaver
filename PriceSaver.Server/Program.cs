@@ -1,15 +1,17 @@
 using Microsoft.EntityFrameworkCore;
+using PriceSaver.Server.Data;
 using PriceSaver.Server.Handlers;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
 using PriceSaver.Server.Services;
 using Serilog;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
 builder.Services.AddControllers();
+
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
@@ -25,11 +27,36 @@ builder.Services
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
-// configuration for DB and services
-builder.Services.AddDbContext<PriceSaver.Server.Data.ApplicationDbContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// Database
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Register parsers
+// HTTP Clients for parsers
+
+builder.Services.AddHttpClient<SilpoPriceParser>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/125.0.0.0 Safari/537.36");
+
+    client.DefaultRequestHeaders.Accept.ParseAdd(
+        "application/json, text/plain, */*");
+
+    client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(
+        "uk-UA,uk;q=0.9");
+
+    client.DefaultRequestHeaders.Add("Origin", "https://silpo.ua");
+    client.DefaultRequestHeaders.Add("Referer", "https://silpo.ua/");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.All
+});
+
 builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
 builder.Services.AddSingleton<IPriceParser, SilpoPriceParser>();
 builder.Services.AddSingleton<IPriceParser, MetroPriceParser>();
