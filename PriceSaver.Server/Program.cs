@@ -59,8 +59,7 @@ builder.Services.AddHttpClient<SilpoPriceParser>(client =>
 
 builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
 builder.Services.AddSingleton<IPriceParser, SilpoPriceParser>();
-builder.Services.AddSingleton<IPriceParser, MetroPriceParser>();
-builder.Services.AddSingleton<IPriceParser, EpicentrPriceParser>();
+builder.Services.AddSingleton<IPriceParser, MaudauPriceParser>();
 
 // Telegram bot hosted service
 builder.Services.AddSingleton<TelegramService>();
