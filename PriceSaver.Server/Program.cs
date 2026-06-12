@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using PriceSaver.Server.Data;
 using PriceSaver.Server.Handlers;
 using PriceSaver.Server.Options;
@@ -24,6 +25,12 @@ builder.Services
 builder.Services
     .AddOptions<JobsOptions>()
     .Bind(builder.Configuration.GetSection(JobsOptions.SectionName))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+builder.Services
+    .AddOptions<MaudauOptions>()
+    .Bind(builder.Configuration.GetSection(MaudauOptions.SectionName))
     .ValidateDataAnnotations()
     .ValidateOnStart();
 
@@ -74,6 +81,28 @@ builder.Services.AddScoped<ISubscriptionHandler, SubscriptionHandler>();
 builder.Services.AddScoped<PriceCheckerService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
+
+// Maudau market scraper
+builder.Services.AddHttpClient(MaudauScraperService.HttpClientName, (sp, client) =>
+{
+    var maudauOptions = sp.GetRequiredService<IOptions<MaudauOptions>>().Value;
+
+    client.Timeout = TimeSpan.FromSeconds(maudauOptions.RequestTimeoutSeconds);
+
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/125.0.0.0 Safari/537.36");
+
+    client.DefaultRequestHeaders.Accept.ParseAdd("application/json, text/plain, */*");
+    client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("uk-UA,uk;q=0.9");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.All
+});
+
+builder.Services.AddSingleton<IMaudauScraperService, MaudauScraperService>();
 
 // Logging
 builder.Host.UseSerilog((ctx, lc) => lc.WriteTo.Console());
