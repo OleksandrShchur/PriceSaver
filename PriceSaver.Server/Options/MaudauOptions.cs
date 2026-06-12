@@ -19,10 +19,12 @@ namespace PriceSaver.Server.Options
         public int StartPage { get; set; } = 0;
 
         /// <summary>
-        /// Last page index to fetch (inclusive).
+        /// Safety cap on the highest page index to fetch (inclusive). Scraping normally
+        /// stops earlier, as soon as a page returns an empty result. This cap only guards
+        /// against an unbounded loop if the API never returns an empty page.
         /// </summary>
         [Range(0, int.MaxValue)]
-        public int EndPage { get; set; } = 834;
+        public int EndPage { get; set; } = 5000;
 
         /// <summary>
         /// Maximum number of pages fetched concurrently.

@@ -40,11 +40,12 @@ namespace PriceSaver.Server.Services
         public async Task<MaudauScrapeResult> ScrapeAllAsync(CancellationToken cancellationToken = default)
         {
             var startPage = _options.StartPage;
-            var endPage = _options.EndPage;
+            var maxPage = _options.EndPage;
+            var batchSize = _options.MaxParallelRequests;
 
             _logger.LogInformation(
-                "Maudau scrape started. Pages {StartPage}..{EndPage}, parallelism {Parallelism}.",
-                startPage, endPage, _options.MaxParallelRequests);
+                "Maudau scrape started. Pages from {StartPage} (safety cap {MaxPage}), parallelism {Parallelism}.",
+                startPage, maxPage, batchSize);
 
             var pagesProcessed = 0;
             var pagesFailed = 0;
@@ -52,55 +53,74 @@ namespace PriceSaver.Server.Services
             var productsUpdated = 0;
             var failedPages = new ConcurrentBag<int>();
 
-            var pages = Enumerable.Range(startPage, endPage - startPage + 1);
+            var reachedEnd = false;
 
-            var parallelOptions = new ParallelOptions
+            // Process pages in parallel batches, stopping once a page returns an empty
+            // result. This makes the import independent from the site's product count.
+            for (var firstPage = startPage; firstPage <= maxPage && !reachedEnd; firstPage += batchSize)
             {
-                MaxDegreeOfParallelism = _options.MaxParallelRequests,
-                CancellationToken = cancellationToken
-            };
+                cancellationToken.ThrowIfCancellationRequested();
 
-            await Parallel.ForEachAsync(pages, parallelOptions, async (page, ct) =>
-            {
-                try
+                var lastPage = Math.Min(firstPage + batchSize - 1, maxPage);
+                var batch = Enumerable.Range(firstPage, lastPage - firstPage + 1);
+
+                var parallelOptions = new ParallelOptions
                 {
-                    var products = await FetchPageAsync(page, ct);
+                    MaxDegreeOfParallelism = batchSize,
+                    CancellationToken = cancellationToken
+                };
 
-                    if (products.Count == 0)
+                await Parallel.ForEachAsync(batch, parallelOptions, async (page, ct) =>
+                {
+                    try
                     {
+                        var products = await FetchPageAsync(page, ct);
+
+                        if (products.Count == 0)
+                        {
+                            // An empty page marks the end of the catalog.
+                            Volatile.Write(ref reachedEnd, true);
+                            Interlocked.Increment(ref pagesProcessed);
+                            _logger.LogInformation("Page {Page} is empty; reached end of catalog.", page);
+                            return;
+                        }
+
+                        var (inserted, updated) = await UpsertPageAsync(products, ct);
+
+                        Interlocked.Add(ref productsInserted, inserted);
+                        Interlocked.Add(ref productsUpdated, updated);
                         Interlocked.Increment(ref pagesProcessed);
-                        _logger.LogInformation("Page {Page} processed (no products).", page);
-                        return;
+
+                        _logger.LogInformation(
+                            "Page {Page} processed. Products: {Count} (inserted {Inserted}, updated {Updated}).",
+                            page, products.Count, inserted, updated);
                     }
-
-                    var (inserted, updated) = await UpsertPageAsync(products, ct);
-
-                    Interlocked.Add(ref productsInserted, inserted);
-                    Interlocked.Add(ref productsUpdated, updated);
-                    Interlocked.Increment(ref pagesProcessed);
-
-                    _logger.LogInformation(
-                        "Page {Page} processed. Products: {Count} (inserted {Inserted}, updated {Updated}).",
-                        page, products.Count, inserted, updated);
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    Interlocked.Increment(ref pagesFailed);
-                    failedPages.Add(page);
-                    _logger.LogError(ex, "Page {Page} failed after retries and was skipped.", page);
-                }
-                finally
-                {
-                    if (_options.DelayBetweenRequestsMs > 0)
+                    catch (OperationCanceledException) when (ct.IsCancellationRequested)
                     {
-                        await Task.Delay(_options.DelayBetweenRequestsMs, ct);
+                        throw;
                     }
-                }
-            });
+                    catch (Exception ex)
+                    {
+                        Interlocked.Increment(ref pagesFailed);
+                        failedPages.Add(page);
+                        _logger.LogError(ex, "Page {Page} failed after retries and was skipped.", page);
+                    }
+                    finally
+                    {
+                        if (_options.DelayBetweenRequestsMs > 0)
+                        {
+                            await Task.Delay(_options.DelayBetweenRequestsMs, ct);
+                        }
+                    }
+                });
+            }
+
+            if (!reachedEnd)
+            {
+                _logger.LogWarning(
+                    "Reached safety cap page {MaxPage} before an empty page was found. Increase Maudau:EndPage if more pages exist.",
+                    maxPage);
+            }
 
             var result = new MaudauScrapeResult(
                 pagesProcessed,
