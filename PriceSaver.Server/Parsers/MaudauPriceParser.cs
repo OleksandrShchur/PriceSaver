@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -6,19 +7,18 @@ namespace PriceSaver.Server.Parsers
 {
     public class MaudauPriceParser : IPriceParser
     {
-        private const string MaudauApiBase =
-            "https://backend.prod.maudau.click/v1/user/products/searches";
+        private const string MaudauApiBase = "https://backend.prod.maudau.click/v1/user/products/";
 
-        // Matches the product slug at the end of a maudau.com.ua product URL:
-        // https://maudau.com.ua/product/dzhyn-finsbury-wild-strawberry-375-07-l-878772
-        //                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        private static readonly Regex SlugRegex = new(@"/product/(?<slug>[^/?#]+)",
+        private static readonly Regex PriceRegex = new(
+            @"(?<price>\d+(?:[\s\u00A0]\d{3})*(?:[.,]\d{1,2})?)\s*(?:₴|грн|uah)",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        // Extracts the trailing numeric product ID from the slug:
-        // dzhyn-finsbury-wild-strawberry-375-07-l-878772  →  878772
-        private static readonly Regex ProductIdRegex = new(@"-(?<id>\d+)$",
-            RegexOptions.Compiled);
+        private static readonly Regex MetaPriceRegex = new(
+            @"(?:product:price:amount|og:price:amount|price)\s*[:=]\s*(?<price>\d+(?:[.,]\d{1,2})?)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly Regex SlugRegex = new(@"/product/(?<slug>[^/?#]+)",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private readonly HttpClient _http;
 
@@ -38,23 +38,6 @@ namespace PriceSaver.Server.Parsers
                 || uri.Host.Equals("www.maudau.com.ua", StringComparison.OrdinalIgnoreCase);
         }
 
-        public async Task<(string Name, decimal Price)> ParseAsync(
-            string url,
-            CancellationToken ct = default)
-        {
-            var slug = ExtractSlug(url);
-            var productId = ExtractProductId(slug, url);
-
-            using var json = await FetchProductJsonAsync(productId, url, ct);
-
-            return ParseProduct(json, url);
-        }
-
-        // ── Private helpers ──────────────────────────────────────────────────────
-
-        private sealed class PriceParseException(string message)
-            : Exception(message);
-
         private string ExtractSlug(string url)
         {
             var match = SlugRegex.Match(url);
@@ -66,19 +49,18 @@ namespace PriceSaver.Server.Parsers
             return match.Groups["slug"].Value;
         }
 
-        private string ExtractProductId(string slug, string url)
+        public async Task<(string Name, decimal Price)> ParseAsync(
+            string url,
+            CancellationToken ct = default)
         {
-            var match = ProductIdRegex.Match(slug);
-
-            if (!match.Success)
-                throw new PriceParseException(
-                    $"😔 Не вдалося визначити ID товару Maudau зі slug '{slug}'.\n\n🔗 {url}");
-
-            return match.Groups["id"].Value;
+            var slug = ExtractSlug(url);
+            return await FetchProductInfoFromApiAsync(slug, url, ct);
         }
 
-        private async Task<JsonDocument> FetchProductJsonAsync(
-            string productId,
+        private sealed class PriceParseException(string message) : Exception(message);
+
+        private async Task<(string Name, decimal Price)> FetchProductInfoFromApiAsync(
+            string slug,
             string originalUrl,
             CancellationToken ct)
         {
@@ -87,16 +69,24 @@ namespace PriceSaver.Server.Parsers
             static TimeSpan Delay(int attempt) =>
                 TimeSpan.FromSeconds(Math.Min(Math.Pow(2, attempt - 1), 10));
 
-            var requestUrl = $"{MaudauApiBase}?product_ids={productId}&per_page=1";
-
             for (int attempt = 1; attempt <= MaxAttempts; attempt++)
             {
                 HttpResponseMessage? response = null;
 
                 try
                 {
-                    using var request =
-                        new HttpRequestMessage(HttpMethod.Get, requestUrl);
+                    using var request = new HttpRequestMessage(
+                        HttpMethod.Get,
+                        $"{MaudauApiBase}{Uri.EscapeDataString(slug)}");
+
+                    request.Headers.TryAddWithoutValidation(
+                        "Accept",
+                        "application/json, text/plain, */*");
+                    request.Headers.TryAddWithoutValidation(
+                        "User-Agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                        "Chrome/124.0.0.0 Safari/537.36");
 
                     response = await _http.SendAsync(
                         request,
@@ -105,7 +95,7 @@ namespace PriceSaver.Server.Parsers
 
                     if (response.StatusCode == HttpStatusCode.NotFound)
                         throw new PriceParseException(
-                            $"😔 Товар не знайдено — можливо, він більше не продається.\n\n🔗 {originalUrl}");
+                            $"😔 Товар не знайдено.\n\n🔗 {originalUrl}");
 
                     if (IsTransient(response))
                     {
@@ -121,7 +111,12 @@ namespace PriceSaver.Server.Parsers
                     await using var stream =
                         await response.Content.ReadAsStreamAsync(ct);
 
-                    return await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+                    using var document =
+                        await JsonDocument.ParseAsync(
+                            stream,
+                            cancellationToken: ct);
+
+                    return ParseMaudauProductSearchResponse(document, originalUrl);
                 }
                 catch (PriceParseException)
                 {
@@ -138,45 +133,129 @@ namespace PriceSaver.Server.Parsers
             }
 
             throw new PriceParseException(
-                $"😔 На жаль, не вдалося отримати ціну для товару.\n" +
-                $"Спробуй надіслати посилання ще раз — можливо, сайт тимчасово недоступний.\n\n" +
+                $"😔 На жаль, не вдалося отримати оновлені дані про товар.\n" +
+                $"Спробуй ще раз — можливо, сервіс Maudau тимчасово недоступний.\n\n" +
                 $"🔗 {originalUrl}");
         }
 
-        private static (string Name, decimal Price) ParseProduct(
-            JsonDocument doc,
+        private static (string Name, decimal Price) ParseMaudauProductSearchResponse(
+            JsonDocument document,
             string url)
         {
-            var root = doc.RootElement;
+            var product = FindProductElement(document.RootElement);
 
-            // The endpoint returns a JSON array; an empty array means the product
-            // ID wasn't recognised (deleted listing, wrong ID, etc.).
-            if (root.ValueKind != JsonValueKind.Array || root.GetArrayLength() == 0)
+            if (product is null)
                 throw new PriceParseException(
-                    $"😔 Товар не знайдено — можливо, він більше не продається.\n\n🔗 {url}");
+                    $"😔 Не вдалося знайти дані про товар у відповіді сервісу.\n\n🔗 {url}");
 
-            var product = root[0];
+            var name =
+                GetJsonString(product.Value, "title") ??
+                GetJsonString(product.Value, "name") ??
+                GetJsonString(product.Value, "productName") ??
+                GetJsonString(product.Value, "product_name");
 
-            var name = product.TryGetProperty("title", out var titleProp)
-                ? titleProp.GetString()
-                : null;
+            var price =
+                GetJsonDecimal(product.Value, "priceToShow") ??
+                GetJsonDecimal(product.Value, "currentPrice") ??
+                GetJsonDecimal(product.Value, "current_price") ??
+                // Some responses include price under `offer` object
+                (product.Value.TryGetProperty("offer", out var offer)
+                    ? (GetJsonDecimal(offer, "price") ?? GetJsonDecimal(offer, "old_price") ?? GetJsonDecimal(offer, "oldPrice"))
+                    : null) ??
+                GetJsonDecimal(product.Value, "price") ??
+                GetJsonDecimal(product.Value, "discount") ??
+                GetJsonDecimal(product.Value, "salePrice") ??
+                GetJsonDecimal(product.Value, "finalPrice") ??
+                0m;
 
-            if (string.IsNullOrWhiteSpace(name))
-                throw new InvalidOperationException(
-                    "Maudau API: product name not found in response.");
+            // Some API responses return price in cents (e.g. 9900 -> 99.00).
+            // Normalize by dividing by 100 when the value looks like cents
+            // (large integer and divisible by 100).
+            if (price >= 1000m && price % 100m == 0m)
+            {
+                price /= 100m;
+            }
 
-            // offer.price is stored in kopecks (e.g. 39900 → 399.00 UAH).
-            if (!product.TryGetProperty("offer", out var offerProp))
-                throw new InvalidOperationException(
-                    $"Maudau API: 'offer' object not found in response for {url}.");
+            if (price <= 0)
+                throw new PriceParseException(
+                    $"😔 Не вдалося знайти ціну товару у відповіді сервісу.\n\n🔗 {url}");
 
-            if (!offerProp.TryGetProperty("price", out var priceProp)
-                || !priceProp.TryGetDecimal(out var rawPrice)
-                || rawPrice <= 0)
-                throw new InvalidOperationException(
-                    $"Maudau API: could not extract a valid price from response for {url}.");
+            return (name ?? string.Empty, price);
+        }
 
-            return (name!, rawPrice / 100m);
+        private static JsonElement? FindProductElement(JsonElement element)
+        {
+            if (element.ValueKind == JsonValueKind.Array && element.GetArrayLength() > 0)
+                return element[0];
+
+            if (element.ValueKind != JsonValueKind.Object)
+                return null;
+
+            if (element.TryGetProperty("items", out var items))
+            {
+                var nested = FindProductElement(items);
+                if (nested.HasValue)
+                    return nested.Value;
+            }
+
+            if (element.TryGetProperty("products", out var products))
+            {
+                var nested = FindProductElement(products);
+                if (nested.HasValue)
+                    return nested.Value;
+            }
+
+            if (element.TryGetProperty("data", out var data))
+            {
+                var nested = FindProductElement(data);
+                if (nested.HasValue)
+                    return nested.Value;
+            }
+
+            if (element.TryGetProperty("product", out var product) &&
+                product.ValueKind == JsonValueKind.Object)
+            {
+                return product;
+            }
+
+            return element;
+        }
+
+        private static string? GetJsonString(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var prop))
+                return null;
+
+            return prop.ValueKind switch
+            {
+                JsonValueKind.String => prop.GetString(),
+                JsonValueKind.Number => prop.GetRawText(),
+                _ => null,
+            };
+        }
+
+        private static decimal? GetJsonDecimal(JsonElement element, string propertyName)
+        {
+            if (!element.TryGetProperty(propertyName, out var prop))
+                return null;
+
+            if (prop.ValueKind == JsonValueKind.Number &&
+                prop.TryGetDecimal(out var value))
+            {
+                return value;
+            }
+
+            if (prop.ValueKind == JsonValueKind.String &&
+                decimal.TryParse(
+                    prop.GetString(),
+                    NumberStyles.Any,
+                    CultureInfo.InvariantCulture,
+                    out var parsed))
+            {
+                return parsed;
+            }
+
+            return null;
         }
 
         private static bool IsTransient(HttpResponseMessage response) =>
