@@ -123,6 +123,7 @@ namespace PriceSaver.Server.Services
         {
             "atb" => StoreType.ATB,
             "silpo" => StoreType.Silpo,
+            "maudau" => StoreType.Maudau,
             _ => StoreType.Unknown
         };
     }
