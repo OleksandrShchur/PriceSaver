@@ -111,3 +111,6 @@ app.MapControllers();
 app.MapFallbackToFile("/index.html");
 
 app.Run();
+
+// Exposed for integration testing with WebApplicationFactory<Program>.
+public partial class Program { }
