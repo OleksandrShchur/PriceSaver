@@ -25,17 +25,3 @@ CREATE TABLE [dbo].[PriceHistories] (
     [Price] DECIMAL(18,2) NOT NULL,
     [CheckedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
 );
-
--- Maudau market products imported from the public products search API.
-CREATE TABLE [dbo].[MaudauMarket] (
-    [Id] BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
-    [ProductId] BIGINT NOT NULL,
-    [Slug] NVARCHAR(512) NOT NULL,
-    [Title] NVARCHAR(1000) NOT NULL,
-    [Price] DECIMAL(18,2) NOT NULL,
-    [OldPrice] DECIMAL(18,2) NOT NULL,
-    [LastUpdatedUtc] DATETIME2 NOT NULL
-);
-
-CREATE UNIQUE INDEX [IX_MaudauMarket_ProductId] ON [dbo].[MaudauMarket] ([ProductId]);
-CREATE INDEX [IX_MaudauMarket_Slug] ON [dbo].[MaudauMarket] ([Slug]);
