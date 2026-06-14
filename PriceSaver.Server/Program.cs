@@ -59,8 +59,23 @@ builder.Services.AddHttpClient<SilpoPriceParser>(client =>
 
 builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
 builder.Services.AddSingleton<IPriceParser, SilpoPriceParser>();
-builder.Services.AddSingleton<IPriceParser, MetroPriceParser>();
-builder.Services.AddSingleton<IPriceParser, EpicentrPriceParser>();
+
+builder.Services.AddHttpClient<IPriceParser, MaudauPriceParser>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+
+    client.DefaultRequestHeaders.UserAgent.ParseAdd(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+        "AppleWebKit/537.36 (KHTML, like Gecko) " +
+        "Chrome/124.0.0.0 Safari/537.36");
+
+    client.DefaultRequestHeaders.Accept.ParseAdd(
+        "application/json, text/plain, */*");
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.All
+});
 
 // Telegram bot hosted service
 builder.Services.AddSingleton<TelegramService>();

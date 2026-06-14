@@ -10,6 +10,9 @@ namespace PriceSaver.Server.Models
         [Description("Сільпо")]
         Silpo,
 
+        [Description("Maudau")]
+        Maudau,
+
         [Description("Невідомий")]
         Unknown
     }
