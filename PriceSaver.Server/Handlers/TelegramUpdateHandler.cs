@@ -107,6 +107,18 @@ namespace PriceSaver.Server.Handlers
                         messageId,
                         cancellationToken);
                 }
+                else if (callbackQuery.Data?.StartsWith("sub_toggle_increase_") == true)
+                {
+                    var subscriptionId = callbackQuery.Data["sub_toggle_increase_".Length..];
+                    var messageId = callbackQuery.Message?.MessageId ?? 0;
+
+                    await _subscriptionHandler.HandleToggleNotifyOnIncreaseCallbackAsync(
+                        callbackQuery.From.Id,
+                        callbackQuery.Id,
+                        subscriptionId,
+                        messageId,
+                        cancellationToken);
+                }
             }
             catch (Exception ex)
             {

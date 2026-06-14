@@ -9,5 +9,7 @@ namespace PriceSaver.Server.Services
         Task<CreateSubscriptionResult> CreateSubscriptionAsync(long userId, string? username, string url, CancellationToken cancellationToken);
 
         Task<DeactivateSubscriptionResult> DeactivateSubscriptionAsync(long userId, Guid subscriptionId, CancellationToken cancellationToken);
+
+        Task<ToggleNotifyOnIncreaseResult> ToggleNotifyOnIncreaseAsync(long userId, Guid subscriptionId, CancellationToken cancellationToken);
     }
 }
