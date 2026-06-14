@@ -158,12 +158,10 @@ namespace PriceSaver.Server.Handlers
             var safeProductName = WebUtility.HtmlEncode(subscription.ProductName);
             var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
             var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
-            var increaseStatus = subscription.NotifyOnIncrease ? "увімкнено" : "вимкнено";
 
             return $"📦 <b>{safeProductName}</b>\n\n" +
                    $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
                    $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n" +
-                   $"📈 <b>Здорожчання:</b> сповіщення {increaseStatus}\n\n" +
                    $"🔗 <a href=\"{safeProductUrl}\">Перейти до товару</a>";
         }
 
