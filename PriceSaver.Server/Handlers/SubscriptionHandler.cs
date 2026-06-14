@@ -68,8 +68,13 @@ namespace PriceSaver.Server.Handlers
                     return;
                 }
 
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQueryId,
+                    "Підписку видалено. Ми більше не відстежуватимемо цей товар.",
+                    false,
+                    cancellationToken);
+
                 await _telegram.DeleteMessageAsync(chatId, messageId, cancellationToken);
-                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "✅ Підписку видалено.", false, cancellationToken);
             }
             catch (Exception ex)
             {
