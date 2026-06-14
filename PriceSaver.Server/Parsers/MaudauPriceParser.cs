@@ -1,7 +1,9 @@
 ﻿using System.Globalization;
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using PriceSaver.Server.Models;
 
 namespace PriceSaver.Server.Parsers
 {
@@ -28,6 +30,8 @@ namespace PriceSaver.Server.Parsers
         }
 
         public string StoreKey => "maudau";
+
+        public StoreType StoreType => StoreType.Maudau;
 
         public bool CanParse(string url)
         {
@@ -64,78 +68,39 @@ namespace PriceSaver.Server.Parsers
             string originalUrl,
             CancellationToken ct)
         {
-            const int MaxAttempts = 5;
+            using var request = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{MaudauApiBase}{Uri.EscapeDataString(slug)}");
 
-            static TimeSpan Delay(int attempt) =>
-                TimeSpan.FromSeconds(Math.Min(Math.Pow(2, attempt - 1), 10));
+            request.Headers.TryAddWithoutValidation(
+                "Accept",
+                "application/json, text/plain, */*");
+            request.Headers.TryAddWithoutValidation(
+                "User-Agent",
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/124.0.0.0 Safari/537.36");
 
-            for (int attempt = 1; attempt <= MaxAttempts; attempt++)
-            {
-                HttpResponseMessage? response = null;
+            using var response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
 
-                try
-                {
-                    using var request = new HttpRequestMessage(
-                        HttpMethod.Get,
-                        $"{MaudauApiBase}{Uri.EscapeDataString(slug)}");
+            if (response.StatusCode == HttpStatusCode.NotFound)
+                throw new PriceParseException(
+                    $"😔 Товар не знайдено.\n\n🔗 {originalUrl}");
 
-                    request.Headers.TryAddWithoutValidation(
-                        "Accept",
-                        "application/json, text/plain, */*");
-                    request.Headers.TryAddWithoutValidation(
-                        "User-Agent",
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                        "Chrome/124.0.0.0 Safari/537.36");
+            response.EnsureSuccessStatusCode();
 
-                    response = await _http.SendAsync(
-                        request,
-                        HttpCompletionOption.ResponseHeadersRead,
-                        ct);
+            await using var stream =
+                await response.Content.ReadAsStreamAsync(ct);
 
-                    if (response.StatusCode == HttpStatusCode.NotFound)
-                        throw new PriceParseException(
-                            $"😔 Товар не знайдено.\n\n🔗 {originalUrl}");
+            using var document =
+                await JsonDocument.ParseAsync(
+                    stream,
+                    cancellationToken: ct);
 
-                    if (IsTransient(response))
-                    {
-                        if (attempt == MaxAttempts)
-                            break;
-
-                        await Task.Delay(Delay(attempt), ct);
-                        continue;
-                    }
-
-                    response.EnsureSuccessStatusCode();
-
-                    await using var stream =
-                        await response.Content.ReadAsStreamAsync(ct);
-
-                    using var document =
-                        await JsonDocument.ParseAsync(
-                            stream,
-                            cancellationToken: ct);
-
-                    return ParseMaudauProductSearchResponse(document, originalUrl);
-                }
-                catch (PriceParseException)
-                {
-                    throw;
-                }
-                catch (HttpRequestException) when (attempt < MaxAttempts)
-                {
-                    await Task.Delay(Delay(attempt), ct);
-                }
-                finally
-                {
-                    response?.Dispose();
-                }
-            }
-
-            throw new PriceParseException(
-                $"😔 На жаль, не вдалося отримати оновлені дані про товар.\n" +
-                $"Спробуй ще раз — можливо, сервіс Maudau тимчасово недоступний.\n\n" +
-                $"🔗 {originalUrl}");
+            return ParseMaudauProductSearchResponse(document, originalUrl);
         }
 
         private static (string Name, decimal Price) ParseMaudauProductSearchResponse(

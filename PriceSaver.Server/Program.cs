@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PriceSaver.Server.Data;
+using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Handlers;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
@@ -34,7 +35,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
 
 // HTTP Clients for parsers
 
-builder.Services.AddHttpClient<SilpoPriceParser>(client =>
+builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
+
+builder.Services.AddHttpClient<IPriceParser, SilpoPriceParser>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
 
@@ -57,9 +60,6 @@ builder.Services.AddHttpClient<SilpoPriceParser>(client =>
     AutomaticDecompression = DecompressionMethods.All
 });
 
-builder.Services.AddSingleton<IPriceParser, AtbPriceParser>();
-builder.Services.AddSingleton<IPriceParser, SilpoPriceParser>();
-
 builder.Services.AddHttpClient<IPriceParser, MaudauPriceParser>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(15);
@@ -77,9 +77,7 @@ builder.Services.AddHttpClient<IPriceParser, MaudauPriceParser>(client =>
     AutomaticDecompression = DecompressionMethods.All
 });
 
-// Telegram bot hosted service
-builder.Services.AddSingleton<TelegramService>();
-builder.Services.AddSingleton<ITelegramService>(sp => sp.GetRequiredService<TelegramService>());
+builder.Services.AddSingleton<ITelegramService, TelegramService>();
 
 // Register handlers
 builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();

@@ -1,7 +1,9 @@
 using System.Globalization;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
-using HtmlAgilityPack;
+using PriceSaver.Server.Models;
 
 namespace PriceSaver.Server.Parsers
 {
@@ -24,9 +26,16 @@ namespace PriceSaver.Server.Parsers
             @"(?<price>\d+(?:\s*[.,]\s*\d{1,2})?)\s*\u0433\u0440\u043d\s*/",
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-        private static readonly HttpClient JinaHttp = CreateJinaHttpClient();
+        private readonly HttpClient _http;
+
+        public AtbPriceParser(HttpClient http)
+        {
+            _http = http;
+        }
 
         public string StoreKey => "atb";
+
+        public StoreType StoreType => StoreType.ATB;
 
         public bool CanParse(string url)
         {
@@ -50,7 +59,7 @@ namespace PriceSaver.Server.Parsers
             return ParseProductText(text);
         }
 
-        private static async Task<string> DownloadProductTextWithReaderAsync(
+        private async Task<string> DownloadProductTextWithReaderAsync(
             string url,
             CancellationToken ct)
         {
@@ -59,7 +68,7 @@ namespace PriceSaver.Server.Parsers
 
             request.Headers.Accept.ParseAdd("text/plain");
 
-            using var response = await JinaHttp.SendAsync(
+            using var response = await _http.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
                 ct);
@@ -135,7 +144,7 @@ namespace PriceSaver.Server.Parsers
 
         private static string CleanText(string? text) =>
             Regex.Replace(
-                HtmlEntity.DeEntitize(text ?? string.Empty),
+                WebUtility.HtmlDecode(text ?? string.Empty),
                 @"\s+",
                 " ")
             .Trim();
@@ -169,26 +178,6 @@ namespace PriceSaver.Server.Parsers
                 cleanTitle = cleanTitle[..starIndex].Trim();
 
             return cleanTitle;
-        }
-
-        private static HttpClient CreateJinaHttpClient()
-        {
-            var handler = new HttpClientHandler
-            {
-                AutomaticDecompression = DecompressionMethods.All
-            };
-
-            var http = new HttpClient(handler)
-            {
-                Timeout = TimeSpan.FromSeconds(15)
-            };
-
-            http.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/125.0.0.0 Safari/537.36");
-
-            return http;
         }
     }
 }

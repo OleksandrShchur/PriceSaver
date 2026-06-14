@@ -1,6 +1,5 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
-using System.Net;
 using PriceSaver.Server.Data;
 using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Parsers;
