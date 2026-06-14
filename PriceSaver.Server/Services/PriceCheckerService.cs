@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using PriceSaver.Server.Data;
+using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Parsers;
 
 namespace PriceSaver.Server.Services
@@ -53,11 +54,13 @@ namespace PriceSaver.Server.Services
 
                         var percent = old == 0 ? 100 : Math.Round((double)((price - old) / old * 100M), 2);
                         var safeName = WebUtility.HtmlEncode(name);
+                        var safeStoreDescription = WebUtility.HtmlEncode(sub.StoreType.GetDescription());
 
                         if (price > old && sub.NotifyOnIncrease)
                         {
                             var text = $"📈 <b>Ціна зросла!</b>\n\n" +
                                        $"📦 <b>{safeName}</b>\n" +
+                                       $"🏪 <b>{safeStoreDescription}</b>\n" +
                                        $"💰 <code>{old:0.##}</code> UAH → <code>{price:0.##}</code> UAH (<code>+{percent}%</code>)\n\n" +
                                        $"🔗 <a href=\"{sub.ProductUrl}\">Перейти до товару</a>";
 
@@ -70,6 +73,7 @@ namespace PriceSaver.Server.Services
                         {
                             var text = $"📉 <b>Ціна знизилася!</b>\n\n" +
                                        $"📦 <b>{safeName}</b>\n" +
+                                       $"🏪 <b>{safeStoreDescription}</b>\n" +
                                        $"💰 <code>{old:0.##}</code> UAH → <code>{price:0.##}</code> UAH (<code>{percent}%</code>)\n\n" +
                                        $"🔗 <a href=\"{sub.ProductUrl}\">Перейти до товару</a>";
 

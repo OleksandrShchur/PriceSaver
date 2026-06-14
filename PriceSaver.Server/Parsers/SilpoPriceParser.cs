@@ -1,6 +1,8 @@
 using System.Net;
+using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using PriceSaver.Server.Models;
 
 namespace PriceSaver.Server.Parsers
 {
@@ -24,6 +26,8 @@ namespace PriceSaver.Server.Parsers
         }
 
         public string StoreKey => "silpo";
+
+        public StoreType StoreType => StoreType.Silpo;
 
         public bool CanParse(string url)
         {
@@ -65,69 +69,30 @@ namespace PriceSaver.Server.Parsers
             string originalUrl,
             CancellationToken ct)
         {
-            const int MaxAttempts = 5;
+            using var request =
+                new HttpRequestMessage(
+                    HttpMethod.Get,
+                    $"{SilpoApiBase}{slug}");
 
-            static TimeSpan Delay(int attempt) =>
-                TimeSpan.FromSeconds(Math.Min(Math.Pow(2, attempt - 1), 10));
+            using var response = await _http.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                ct);
 
-            for (int attempt = 1; attempt <= MaxAttempts; attempt++)
+            if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                HttpResponseMessage? response = null;
-
-                try
-                {
-                    using var request =
-                        new HttpRequestMessage(
-                            HttpMethod.Get,
-                            $"{SilpoApiBase}{slug}");
-
-                    response = await _http.SendAsync(
-                        request,
-                        HttpCompletionOption.ResponseHeadersRead,
-                        ct);
-
-                    if (response.StatusCode == HttpStatusCode.NotFound)
-                    {
-                        throw new PriceParseException(
-                            $"😔 Товар не знайдено — можливо, він більше не продається.\n\n🔗 {originalUrl}");
-                    }
-
-                    if (IsTransient(response))
-                    {
-                        if (attempt == MaxAttempts)
-                            break;
-
-                        await Task.Delay(Delay(attempt), ct);
-                        continue;
-                    }
-
-                    response.EnsureSuccessStatusCode();
-
-                    await using var stream =
-                        await response.Content.ReadAsStreamAsync(ct);
-
-                    return await JsonDocument.ParseAsync(
-                        stream,
-                        cancellationToken: ct);
-                }
-                catch (PriceParseException)
-                {
-                    throw;
-                }
-                catch (HttpRequestException) when (attempt < MaxAttempts)
-                {
-                    await Task.Delay(Delay(attempt), ct);
-                }
-                finally
-                {
-                    response?.Dispose();
-                }
+                throw new PriceParseException(
+                    $"😔 Товар не знайдено — можливо, він більше не продається.\n\n🔗 {originalUrl}");
             }
 
-            throw new PriceParseException(
-                $"😔 На жаль, не вдалося отримати ціну для товару.\n" +
-                $"Спробуй надіслати посилання ще раз — можливо, сайт тимчасово недоступний.\n\n" +
-                $"🔗 {originalUrl}");
+            response.EnsureSuccessStatusCode();
+
+            await using var stream =
+                await response.Content.ReadAsStreamAsync(ct);
+
+            return await JsonDocument.ParseAsync(
+                stream,
+                cancellationToken: ct);
         }
 
         private static (string Name, decimal Price) ParseProduct(
@@ -185,15 +150,6 @@ namespace PriceSaver.Server.Parsers
             }
 
             return (name!, price);
-        }
-
-        private static bool IsTransient(HttpResponseMessage response)
-        {
-            return response.StatusCode is
-                       HttpStatusCode.Forbidden or
-                       HttpStatusCode.TooManyRequests or
-                       HttpStatusCode.ServiceUnavailable
-                   || (int)response.StatusCode >= 500;
         }
     }
 }
