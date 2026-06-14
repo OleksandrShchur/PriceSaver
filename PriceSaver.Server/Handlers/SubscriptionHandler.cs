@@ -107,8 +107,10 @@ namespace PriceSaver.Server.Handlers
         private static string BuildAlreadyActiveMessage(Subscription subscription)
         {
             var safeName = WebUtility.HtmlEncode(subscription.ProductName);
+            var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
             return $"ℹ️ <b>Ця підписка вже існує у Вашому списку.</b>\n\n" +
                    $"📦 <b>{safeName}</b>\n" +
+                   $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
                    $"💰 <b>Поточна ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n\n" +
                    $"🔗 <a href=\"{subscription.ProductUrl}\">Перейти до товару</a>";
         }
