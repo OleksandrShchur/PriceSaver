@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\pricesaver.client\pricesaver.client.esproj">
+    <ProjectReference Include="..\pricesaver.client\pricesaver.client.esproj" Condition="'$(SkipSpaReference)' != 'true'">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
