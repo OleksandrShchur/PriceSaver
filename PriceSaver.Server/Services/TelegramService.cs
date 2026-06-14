@@ -77,6 +77,25 @@ namespace PriceSaver.Server.Services
                 cancellationToken: cancellationToken);
         }
 
+        public async Task EditMessageTextAsync(long chatId, int messageId, string text, InlineKeyboardMarkup replyMarkup, CancellationToken cancellationToken = default)
+        {
+            if (Client is null)
+            {
+                _logger.LogWarning("Telegram bot token is not configured; message edit for chat {ChatId} was skipped.", chatId);
+
+                return;
+            }
+
+            await Client.EditMessageTextAsync(
+                chatId: chatId,
+                messageId: messageId,
+                text: text,
+                parseMode: ParseMode.Html,
+                disableWebPagePreview: true,
+                replyMarkup: replyMarkup,
+                cancellationToken: cancellationToken);
+        }
+
         public async Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken = default)
         {
             if (Client is null)

@@ -51,6 +51,20 @@ namespace PriceSaver.Server.Services
             return new DeactivateSubscriptionResult(DeactivateSubscriptionStatus.Success);
         }
 
+        public async Task<ToggleNotifyOnIncreaseResult> ToggleNotifyOnIncreaseAsync(long userId, Guid subscriptionId, CancellationToken cancellationToken)
+        {
+            var subscription = await _db.Subscriptions
+                .FirstOrDefaultAsync(s => s.Id == subscriptionId && s.UserId == userId && s.IsActive, cancellationToken);
+
+            if (subscription is null)
+                return new ToggleNotifyOnIncreaseResult(ToggleNotifyOnIncreaseStatus.NotFound);
+
+            subscription.NotifyOnIncrease = !subscription.NotifyOnIncrease;
+            await _db.SaveChangesAsync(cancellationToken);
+
+            return new ToggleNotifyOnIncreaseResult(ToggleNotifyOnIncreaseStatus.Success, subscription);
+        }
+
         public async Task<CreateSubscriptionResult> CreateSubscriptionAsync(long userId, string? username, string url, CancellationToken cancellationToken)
         {
             var existingActive = await _db.Subscriptions

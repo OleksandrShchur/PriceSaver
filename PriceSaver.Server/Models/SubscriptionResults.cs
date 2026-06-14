@@ -21,4 +21,14 @@
     }
 
     public record DeactivateSubscriptionResult(DeactivateSubscriptionStatus Status);
+
+    public enum ToggleNotifyOnIncreaseStatus
+    {
+        Success,
+        NotFound
+    }
+
+    public record ToggleNotifyOnIncreaseResult(
+        ToggleNotifyOnIncreaseStatus Status,
+        Subscription? Subscription = null);
 }
