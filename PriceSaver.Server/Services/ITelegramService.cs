@@ -5,6 +5,7 @@ namespace PriceSaver.Server.Services
     public interface ITelegramService
     {
         Task SendMessageAsync(long chatId, string text, CancellationToken cancellationToken = default);
+        Task SendRichMessageAsync(long chatId, string markdown, CancellationToken cancellationToken = default);
         Task SendMessageWithKeyboardAsync(long chatId, string text, IReplyMarkup replyMarkup, CancellationToken cancellationToken = default);
         Task SendMessageWithInlineButtonAsync(long chatId, string text, string buttonLabel, string callbackData, CancellationToken cancellationToken = default);
         Task EditMessageTextAsync(long chatId, int messageId, string text, InlineKeyboardMarkup replyMarkup, CancellationToken cancellationToken = default);

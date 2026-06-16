@@ -1,4 +1,5 @@
-using System.Net;
+using System.Text;
+using PriceSaver.Server.Models;
 using Microsoft.EntityFrameworkCore;
 using PriceSaver.Server.Data;
 using PriceSaver.Server.Extensions;
@@ -8,6 +9,77 @@ namespace PriceSaver.Server.Services
 {
     public class PriceCheckerService
     {
+        private const int MaxProductTitleLength = 45;
+
+        private sealed record PriceChangeRow(
+            string ProductName,
+            string ProductUrl,
+            decimal OldPrice,
+            decimal NewPrice,
+            string ChangePercentText);
+
+        private static string EscapeMarkdownTableCell(string value)
+        {
+            // Telegram parses GFM-like Markdown tables in rich messages.
+            // To keep cell content from breaking the table structure, we escape pipes.
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("|", "\\|")
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+        }
+
+        private static string EscapeMarkdownLinkText(string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("\\", "\\\\")
+                .Replace("[", "\\[")
+                .Replace("]", "\\]")
+                .Replace("\r", " ")
+                .Replace("\n", " ")
+                .Trim();
+        }
+
+        private static string TruncateProductTitle(string value)
+        {
+            var text = (value ?? string.Empty).Trim();
+            if (text.Length <= MaxProductTitleLength)
+            {
+                return text;
+            }
+
+            return text[..(MaxProductTitleLength - 1)].TrimEnd() + "…";
+        }
+
+        private static string FormatProductCell(string productName, string productUrl)
+        {
+            var title = EscapeMarkdownLinkText(TruncateProductTitle(productName));
+            return $"[{title}]({productUrl})";
+        }
+
+        private static string BuildMarketPriceChangesMarkdown(string marketName, IReadOnlyList<PriceChangeRow> rows, int partIndex, int partsCount)
+        {
+            var sb = new StringBuilder();
+
+            var marketSuffix = partsCount > 1 ? $" (частина {partIndex + 1}/{partsCount})" : string.Empty;
+            sb.AppendLine($"🏪 **{marketName}**{marketSuffix}");
+            sb.AppendLine();
+
+            // Column alignment keeps numeric columns compact so long product titles
+            // do not push price columns off-screen on mobile clients.
+            sb.AppendLine("| Товар | Стара ціна | Нова ціна | Зміна (%) |");
+            sb.AppendLine("|:------|-----------:|----------:|----------:|");
+
+            foreach (var row in rows)
+            {
+                sb.AppendLine(
+                    $"| {FormatProductCell(row.ProductName, row.ProductUrl)} | {row.OldPrice:0.##} | {row.NewPrice:0.##} | {EscapeMarkdownTableCell(row.ChangePercentText)} |");
+            }
+
+            return sb.ToString().TrimEnd();
+        }
+
         private readonly ApplicationDbContext _db;
         private readonly IPriceParser[] _parsers;
         private readonly ITelegramService _telegram;
@@ -24,6 +96,10 @@ namespace PriceSaver.Server.Services
         public async Task CheckAllAsync(CancellationToken ct = default)
         {
             var subs = await _db.Subscriptions.Where(s => s.IsActive).ToListAsync(ct);
+
+            // Scenario 1: when a user receives price changes, send separate message per market.
+            // Additionally, each message may contain not more than 1 table, and each table not more than 10 rows.
+            var changesByUserAndMarket = new Dictionary<(long userId, StoreType storeType), List<PriceChangeRow>>();
 
             foreach (var sub in subs)
             {
@@ -53,34 +129,24 @@ namespace PriceSaver.Server.Services
                         await _db.SaveChangesAsync(ct);
 
                         var percent = old == 0 ? 100 : Math.Round((double)((price - old) / old * 100M), 2);
-                        var safeName = WebUtility.HtmlEncode(name);
-                        var safeStoreDescription = WebUtility.HtmlEncode(sub.StoreType.GetDescription());
+                        var changePercentText = price > old
+                            ? $"+{percent:0.##}%"
+                            : $"{percent:0.##}%";
 
-                        if (price > old && sub.NotifyOnIncrease)
+                        var shouldNotify =
+                            (price > old && sub.NotifyOnIncrease) ||
+                            (price < old);
+
+                        if (shouldNotify)
                         {
-                            var text = $"📈 <b>Ціна зросла!</b>\n\n" +
-                                       $"📦 <b>{safeName}</b>\n" +
-                                       $"🏪 <b>{safeStoreDescription}</b>\n" +
-                                       $"💰 <code>{old:0.##}</code> UAH → <code>{price:0.##}</code> UAH (<code>+{percent}%</code>)\n\n" +
-                                       $"🔗 <a href=\"{sub.ProductUrl}\">Перейти до товару</a>";
+                            var key = (sub.UserId, sub.StoreType);
+                            if (!changesByUserAndMarket.TryGetValue(key, out var list))
+                            {
+                                list = new List<PriceChangeRow>();
+                                changesByUserAndMarket[key] = list;
+                            }
 
-                            await _telegram.SendMessageAsync(
-                                sub.UserId,
-                                text,
-                                cancellationToken: ct);
-                        }
-                        else if (price < old)
-                        {
-                            var text = $"📉 <b>Ціна знизилася!</b>\n\n" +
-                                       $"📦 <b>{safeName}</b>\n" +
-                                       $"🏪 <b>{safeStoreDescription}</b>\n" +
-                                       $"💰 <code>{old:0.##}</code> UAH → <code>{price:0.##}</code> UAH (<code>{percent}%</code>)\n\n" +
-                                       $"🔗 <a href=\"{sub.ProductUrl}\">Перейти до товару</a>";
-
-                            await _telegram.SendMessageAsync(
-                                sub.UserId,
-                                text,
-                                cancellationToken: ct);
+                            list.Add(new PriceChangeRow(name, sub.ProductUrl, old, price, changePercentText));
                         }
                     }
                 }
@@ -91,6 +157,31 @@ namespace PriceSaver.Server.Services
 
                 // small delay to be polite to stores
                 await Task.Delay(500, ct);
+            }
+
+            // Flush messages after all subscriptions are checked, so the user receives one message per market
+            // (possibly chunked into multiple messages if there are more than 10 changes for that market).
+            foreach (var entry in changesByUserAndMarket)
+            {
+                var (userId, storeType) = entry.Key;
+                var marketName = storeType.GetDescription();
+                var rows = entry.Value;
+
+                var partsCount = (rows.Count + 9) / 10;
+                var partIndex = 0;
+                for (var i = 0; i < rows.Count; i += 10)
+                {
+                    var chunkSize = Math.Min(10, rows.Count - i);
+                    var chunk = rows.GetRange(i, chunkSize);
+
+                    var markdown = BuildMarketPriceChangesMarkdown(marketName, chunk, partIndex, partsCount);
+                    await _telegram.SendRichMessageAsync(
+                        userId,
+                        markdown,
+                        cancellationToken: ct);
+
+                    partIndex++;
+                }
             }
         }
     }

@@ -4,6 +4,7 @@ using PriceSaver.Server.Models;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Services;
 using PriceSaver.Server.Tests.Helpers;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace PriceSaver.Server.Tests.Handlers
 {
@@ -60,11 +61,24 @@ namespace PriceSaver.Server.Tests.Handlers
 
             await sut.SendSubscriptionsAsync(ChatId, CancellationToken.None);
 
-            telegram.Verify(t => t.SendMessageWithInlineButtonAsync(
-                    ChatId, It.Is<string>(s => s.Contains("A")), "🗑️ Видалити", $"sub_remove_{sub1.Id}", It.IsAny<CancellationToken>()),
+            telegram.Verify(t => t.SendMessageWithKeyboardAsync(
+                    ChatId,
+                    It.Is<string>(s => s.Contains("A")),
+                    It.Is<IReplyMarkup>(m =>
+                        m is InlineKeyboardMarkup &&
+                        ((InlineKeyboardMarkup)m).InlineKeyboard.Any(row =>
+                            row.Any(b => b.Text == "🗑️ Видалити" && b.CallbackData == $"sub_remove_{sub1.Id}"))),
+                    It.IsAny<CancellationToken>()),
                 Times.Once);
-            telegram.Verify(t => t.SendMessageWithInlineButtonAsync(
-                    ChatId, It.Is<string>(s => s.Contains("B")), "🗑️ Видалити", $"sub_remove_{sub2.Id}", It.IsAny<CancellationToken>()),
+
+            telegram.Verify(t => t.SendMessageWithKeyboardAsync(
+                    ChatId,
+                    It.Is<string>(s => s.Contains("B")),
+                    It.Is<IReplyMarkup>(m =>
+                        m is InlineKeyboardMarkup &&
+                        ((InlineKeyboardMarkup)m).InlineKeyboard.Any(row =>
+                            row.Any(b => b.Text == "🗑️ Видалити" && b.CallbackData == $"sub_remove_{sub2.Id}"))),
+                    It.IsAny<CancellationToken>()),
                 Times.Once);
         }
 
