@@ -31,6 +31,7 @@ namespace PriceSaver.Server.Tests.Services
             var act = async () =>
             {
                 await sut.SendMessageAsync(1, "hello");
+                await sut.SendRichMessageAsync(1, "hello");
                 await sut.SendMessageWithKeyboardAsync(1, "hello", keyboard);
                 await sut.SendMessageWithInlineButtonAsync(1, "hello", "label", "data");
                 await sut.DeleteMessageAsync(1, 2);

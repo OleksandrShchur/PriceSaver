@@ -11,11 +11,15 @@ namespace PriceSaver.Server.Tests.Helpers
     public sealed class RecordingTelegramService : ITelegramService
     {
         public record SentMessage(long ChatId, string Text);
+        public record RichMessage(long ChatId, string Markdown);
+        public record EditedMessage(long ChatId, int MessageId, string Text);
         public record InlineButton(long ChatId, string Text, string ButtonLabel, string CallbackData);
         public record DeletedMessage(long ChatId, int MessageId);
         public record CallbackAnswer(string CallbackQueryId, string? Text, bool ShowAlert);
 
         public ConcurrentQueue<SentMessage> Messages { get; } = new();
+        public ConcurrentQueue<RichMessage> RichMessages { get; } = new();
+        public ConcurrentQueue<EditedMessage> EditedMessages { get; } = new();
         public ConcurrentQueue<SentMessage> KeyboardMessages { get; } = new();
         public ConcurrentQueue<InlineButton> InlineButtons { get; } = new();
         public ConcurrentQueue<DeletedMessage> DeletedMessages { get; } = new();
@@ -27,9 +31,32 @@ namespace PriceSaver.Server.Tests.Helpers
             return Task.CompletedTask;
         }
 
+        public Task SendRichMessageAsync(long chatId, string markdown, CancellationToken cancellationToken = default)
+        {
+            RichMessages.Enqueue(new RichMessage(chatId, markdown));
+            return Task.CompletedTask;
+        }
+
         public Task SendMessageWithKeyboardAsync(long chatId, string text, IReplyMarkup replyMarkup, CancellationToken cancellationToken = default)
         {
             KeyboardMessages.Enqueue(new SentMessage(chatId, text));
+
+            // Some parts of the bot send inline buttons through the generic keyboard method.
+            // Record them so integration tests can assert on callback data.
+            if (replyMarkup is InlineKeyboardMarkup inlineKeyboard)
+            {
+                foreach (var row in inlineKeyboard.InlineKeyboard)
+                {
+                    foreach (var button in row)
+                    {
+                        if (!string.IsNullOrWhiteSpace(button.CallbackData))
+                        {
+                            InlineButtons.Enqueue(new InlineButton(chatId, text, button.Text, button.CallbackData));
+                        }
+                    }
+                }
+            }
+
             return Task.CompletedTask;
         }
 
@@ -42,6 +69,12 @@ namespace PriceSaver.Server.Tests.Helpers
         public Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken = default)
         {
             DeletedMessages.Enqueue(new DeletedMessage(chatId, messageId));
+            return Task.CompletedTask;
+        }
+
+        public Task EditMessageTextAsync(long chatId, int messageId, string text, InlineKeyboardMarkup replyMarkup, CancellationToken cancellationToken = default)
+        {
+            EditedMessages.Enqueue(new EditedMessage(chatId, messageId, text));
             return Task.CompletedTask;
         }
 

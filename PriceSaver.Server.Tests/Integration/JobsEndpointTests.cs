@@ -63,7 +63,11 @@ namespace PriceSaver.Server.Tests.Integration
             db.Subscriptions.Single(s => s.Id == subId).CurrentPrice.Should().Be(100m);
             db.PriceHistories.Should().Contain(p => p.SubscriptionId == subId && p.Price == 100m);
 
-            _factory.Telegram.Messages.Should().Contain(m => m.ChatId == userId && m.Text.Contains("знизилася"));
+            _factory.Telegram.RichMessages.Should().Contain(m =>
+                m.ChatId == userId &&
+                m.Markdown.Contains("АТБ") &&
+                m.Markdown.Contains("| Товар | Стара ціна | Нова ціна | Зміна (%) |") &&
+                m.Markdown.Contains("| [Integration Product](https://example.com/product/1) | 200 | 100 | -50% |"));
         }
     }
 }

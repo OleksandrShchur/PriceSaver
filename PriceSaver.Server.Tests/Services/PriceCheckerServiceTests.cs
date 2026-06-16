@@ -65,9 +65,12 @@ namespace PriceSaver.Server.Tests.Services
 
             db.Subscriptions.Single(s => s.Id == sub.Id).CurrentPrice.Should().Be(80m);
             db.PriceHistories.Should().ContainSingle(p => p.SubscriptionId == sub.Id && p.Price == 80m);
-            telegram.Verify(t => t.SendMessageAsync(
+            telegram.Verify(t => t.SendRichMessageAsync(
                     UserId,
-                    It.Is<string>(s => s.Contains("знизилася")),
+                    It.Is<string>(s =>
+                        s.Contains("АТБ") &&
+                        s.Contains("| Товар | Стара ціна | Нова ціна | Зміна (%) |") &&
+                        s.Contains($"| [Tracked product]({Url}) | 100 | 80 | -20% |")),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }
@@ -86,9 +89,12 @@ namespace PriceSaver.Server.Tests.Services
             await sut.CheckAllAsync(CancellationToken.None);
 
             db.PriceHistories.Should().ContainSingle(p => p.SubscriptionId == sub.Id && p.Price == 120m);
-            telegram.Verify(t => t.SendMessageAsync(
+            telegram.Verify(t => t.SendRichMessageAsync(
                     UserId,
-                    It.Is<string>(s => s.Contains("зросла")),
+                    It.Is<string>(s =>
+                        s.Contains("АТБ") &&
+                        s.Contains("| Товар | Стара ціна | Нова ціна | Зміна (%) |") &&
+                        s.Contains($"| [Tracked product]({Url}) | 100 | 120 | +20% |")),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }
@@ -109,7 +115,7 @@ namespace PriceSaver.Server.Tests.Services
             // Price changed, so history is still recorded ...
             db.PriceHistories.Should().ContainSingle(p => p.SubscriptionId == sub.Id);
             // ... but no message is sent for an unwanted increase.
-            telegram.Verify(t => t.SendMessageAsync(
+            telegram.Verify(t => t.SendRichMessageAsync(
                     It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
@@ -128,7 +134,7 @@ namespace PriceSaver.Server.Tests.Services
             await sut.CheckAllAsync(CancellationToken.None);
 
             db.PriceHistories.Should().BeEmpty();
-            telegram.Verify(t => t.SendMessageAsync(
+            telegram.Verify(t => t.SendRichMessageAsync(
                     It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
