@@ -15,12 +15,14 @@ namespace PriceSaver.Server.Tests.Services
         private static Subscription SeedSubscription(
             ApplicationDbContext db,
             decimal currentPrice,
-            bool notifyOnIncrease = false)
+            bool notifyOnIncrease = false,
+            long userId = UserId,
+            string? productUrl = null)
         {
             var sub = new Subscription
             {
-                UserId = UserId,
-                ProductUrl = Url,
+                UserId = userId,
+                ProductUrl = productUrl ?? Url,
                 StoreType = StoreType.ATB,
                 ProductName = "Tracked product",
                 CurrentPrice = currentPrice,
@@ -137,6 +139,39 @@ namespace PriceSaver.Server.Tests.Services
             telegram.Verify(t => t.SendRichMessageAsync(
                     It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
+        }
+
+        [Fact]
+        public async Task CheckAllAsync_DeduplicatesByProductUrlAndStoreType_ParsesOnceAndUpdatesAllSubscriptions()
+        {
+            using var db = TestDbContextFactory.CreateInMemory();
+            const long secondUserId = 42;
+            var subA = SeedSubscription(db, 100m, userId: UserId);
+            var subB = SeedSubscription(db, 100m, userId: secondUserId);
+
+            var parser = new FakePriceParser(parse: (_, _) => Task.FromResult(("Tracked product", 80m)));
+            var telegram = new Mock<ITelegramService>();
+            var logger = new TestLogger<PriceCheckerService>();
+            var sut = new PriceCheckerService(db, [parser], telegram.Object, logger);
+
+            await sut.CheckAllAsync(CancellationToken.None);
+
+            parser.ParseCallCount.Should().Be(1);
+            db.Subscriptions.Single(s => s.Id == subA.Id).CurrentPrice.Should().Be(80m);
+            db.Subscriptions.Single(s => s.Id == subB.Id).CurrentPrice.Should().Be(80m);
+            db.PriceHistories.Should().HaveCount(2);
+            db.PriceHistories.Should().Contain(p => p.SubscriptionId == subA.Id && p.Price == 80m);
+            db.PriceHistories.Should().Contain(p => p.SubscriptionId == subB.Id && p.Price == 80m);
+            telegram.Verify(t => t.SendRichMessageAsync(
+                    UserId,
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+            telegram.Verify(t => t.SendRichMessageAsync(
+                    secondUserId,
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
         }
 
         [Fact]
