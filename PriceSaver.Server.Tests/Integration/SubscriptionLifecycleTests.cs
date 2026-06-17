@@ -101,6 +101,25 @@ namespace PriceSaver.Server.Tests.Integration
             }
 
             _factory.Telegram.CallbackAnswers.Should().Contain(a => a.Text!.Contains("видалено"));
+
+            // 4. Re-add the same product -> reactivate the existing row instead of inserting a new one.
+            var recreateResponse = await client.PostAsync(
+                "/api/telegram",
+                Json(MessageUpdate(4, 13, "https://example.com/product/9")));
+            recreateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+                db.Subscriptions.Should().ContainSingle();
+                var sub = db.Subscriptions.Single();
+                sub.Id.Should().Be(subscriptionId);
+                sub.IsActive.Should().BeTrue();
+                sub.ProductName.Should().Be("Integration Product");
+                sub.CurrentPrice.Should().Be(100m);
+            }
+
+            _factory.Telegram.Messages.Should().Contain(m => m.Text.Contains("Підписку створено"));
         }
     }
 }
