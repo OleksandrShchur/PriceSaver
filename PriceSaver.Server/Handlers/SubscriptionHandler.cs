@@ -146,11 +146,11 @@ namespace PriceSaver.Server.Handlers
         {
             var safeName = WebUtility.HtmlEncode(subscription.ProductName);
             var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
+            var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
             return $"ℹ️ <b>Ця підписка вже існує у Вашому списку.</b>\n\n" +
-                   $"📦 <b>{safeName}</b>\n" +
+                   $"📦 <a href=\"{safeProductUrl}\"><b>{safeName}</b></a>\n" +
                    $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
-                   $"💰 <b>Поточна ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n\n" +
-                   $"🔗 <a href=\"{subscription.ProductUrl}\">Перейти до товару</a>";
+                   $"💰 <b>Поточна ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
         }
 
         private static string BuildSubscriptionMessage(Subscription subscription)
@@ -159,10 +159,9 @@ namespace PriceSaver.Server.Handlers
             var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
             var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
 
-            return $"📦 <b>{safeProductName}</b>\n\n" +
+            return $"📦 <a href=\"{safeProductUrl}\"><b>{safeProductName}</b></a>\n\n" +
                    $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
-                   $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n" +
-                   $"🔗 <a href=\"{safeProductUrl}\">Перейти до товару</a>";
+                   $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
         }
 
         private static InlineKeyboardMarkup BuildSubscriptionKeyboard(Subscription subscription)
@@ -181,11 +180,12 @@ namespace PriceSaver.Server.Handlers
         private static string BuildConfirmationMessage(Subscription subscription)
         {
             var safeName = WebUtility.HtmlEncode(subscription.ProductName);
+            var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
+            var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
             return $"✅ <b>Підписку створено!</b>\n\n" +
-                   $"📦 <b>{safeName}</b>\n" +
-                   $"🏪 <b>Магазин:</b> {subscription.StoreType.GetDescription()}\n" +
-                   $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH\n\n" +
-                   $"🔗 <a href=\"{subscription.ProductUrl}\">Перейти до товару</a>";
+                   $"📦 <a href=\"{safeProductUrl}\"><b>{safeName}</b></a>\n" +
+                   $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
+                   $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
         }
     }
 }
