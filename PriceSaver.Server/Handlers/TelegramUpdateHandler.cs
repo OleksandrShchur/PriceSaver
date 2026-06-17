@@ -1,5 +1,6 @@
 using System.Net;
 using Microsoft.Extensions.Options;
+using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Services;
 using Telegram.Bot.Types;
@@ -79,7 +80,11 @@ namespace PriceSaver.Server.Handlers
                     "🔍 <i>Перевіряємо посилання, зачекайте хвилинку...</i>",
                     cancellationToken);
 
-                await _subscriptionHandler.CreateSubscriptionAsync(chatId, message.From?.Username, uri.ToString(), cancellationToken);
+                await _subscriptionHandler.CreateSubscriptionAsync(
+                    chatId,
+                    message.From?.Username,
+                    ProductUrlNormalizer.Normalize(uri.ToString()),
+                    cancellationToken);
                 
                 return;
             }

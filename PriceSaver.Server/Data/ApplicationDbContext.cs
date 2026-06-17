@@ -26,6 +26,7 @@ namespace PriceSaver.Server.Data
                 b.HasKey(s => s.Id);
                 b.Property(s => s.ProductUrl).IsRequired();
                 b.Property(s => s.ProductName).HasMaxLength(500);
+                b.HasIndex(s => new { s.UserId, s.ProductUrl }).IsUnique();
             });
 
             modelBuilder.Entity<PriceHistory>(b =>
