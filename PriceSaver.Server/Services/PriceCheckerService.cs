@@ -101,32 +101,42 @@ namespace PriceSaver.Server.Services
             // Additionally, each message may contain not more than 1 table, and each table not more than 10 rows.
             var changesByUserAndMarket = new Dictionary<(long userId, StoreType storeType), List<PriceChangeRow>>();
 
-            foreach (var sub in subs)
+            var productGroups = subs.GroupBy(s => (s.ProductUrl, s.StoreType));
+
+            foreach (var group in productGroups)
             {
+                var productUrl = group.Key.ProductUrl;
+
                 try
                 {
-                    var parser = _parsers.FirstOrDefault(p => p.CanParse(sub.ProductUrl));
+                    var parser = _parsers.FirstOrDefault(p => p.CanParse(productUrl));
                     if (parser == null)
                     {
-                        _logger.LogWarning("No parser for {Url}", sub.ProductUrl);
+                        _logger.LogWarning("No parser for {Url}", productUrl);
                         continue;
                     }
 
-                    var (name, price) = await parser.ParseAsync(sub.ProductUrl, ct);
-                    if (price != sub.CurrentPrice)
+                    var (name, price) = await parser.ParseAsync(productUrl, ct);
+                    var checkedAt = DateTime.UtcNow;
+                    var hasChanges = false;
+
+                    foreach (var sub in group)
                     {
+                        if (price == sub.CurrentPrice)
+                            continue;
+
                         var old = sub.CurrentPrice;
                         sub.CurrentPrice = price;
-                        sub.LastCheckedDate = DateTime.UtcNow;
+                        sub.LastCheckedDate = checkedAt;
 
                         _db.PriceHistories.Add(new Models.PriceHistory
                         {
                             SubscriptionId = sub.Id,
                             Price = price,
-                            CheckedAt = DateTime.UtcNow
+                            CheckedAt = checkedAt
                         });
 
-                        await _db.SaveChangesAsync(ct);
+                        hasChanges = true;
 
                         var percent = old == 0 ? 100 : Math.Round((double)((price - old) / old * 100M), 2);
                         var changePercentText = price > old
@@ -149,10 +159,13 @@ namespace PriceSaver.Server.Services
                             list.Add(new PriceChangeRow(name, sub.ProductUrl, old, price, changePercentText));
                         }
                     }
+
+                    if (hasChanges)
+                        await _db.SaveChangesAsync(ct);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to check price for {Url}", sub.ProductUrl);
+                    _logger.LogError(ex, "Failed to check price for {Url}", productUrl);
                 }
 
                 // small delay to be polite to stores

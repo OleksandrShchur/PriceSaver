@@ -16,7 +16,8 @@ CREATE TABLE [dbo].[Subscriptions] (
     [LastCheckedDate] DATETIME2 NULL,
     [IsActive] BIT NOT NULL DEFAULT 1,
     [NotifyOnIncrease] BIT NOT NULL DEFAULT 0,
-    [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    CONSTRAINT [UQ_Subscriptions_UserId_ProductUrl] UNIQUE ([UserId], [ProductUrl])
 );
 
 CREATE TABLE [dbo].[PriceHistories] (

@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Data;
+using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Models;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
@@ -67,13 +68,15 @@ namespace PriceSaver.Server.Services
 
         public async Task<CreateSubscriptionResult> CreateSubscriptionAsync(long userId, string? username, string url, CancellationToken cancellationToken)
         {
-            var existingActive = await _db.Subscriptions
-                .FirstOrDefaultAsync(s => s.UserId == userId && s.ProductUrl == url && s.IsActive, cancellationToken);
+            var normalizedUrl = ProductUrlNormalizer.Normalize(url);
 
-            if (existingActive is not null)
-                return new CreateSubscriptionResult(CreateSubscriptionStatus.AlreadyActive, existingActive);
+            var existing = await _db.Subscriptions
+                .FirstOrDefaultAsync(s => s.UserId == userId && s.ProductUrl == normalizedUrl, cancellationToken);
 
-            var parser = _parsers.FirstOrDefault(p => p.CanParse(url));
+            if (existing is { IsActive: true })
+                return new CreateSubscriptionResult(CreateSubscriptionStatus.AlreadyActive, existing);
+
+            var parser = _parsers.FirstOrDefault(p => p.CanParse(normalizedUrl));
             if (parser is null)
                 return new CreateSubscriptionResult(CreateSubscriptionStatus.UnsupportedStore);
 
@@ -87,47 +90,39 @@ namespace PriceSaver.Server.Services
             {
                 await _userService.EnsureUserExistsAsync(userId, username, cancellationToken);
 
-                var (name, price) = await parser.ParseAsync(url, cancellationToken);
+                var (name, price) = await parser.ParseAsync(normalizedUrl, cancellationToken);
                 var storeType = InferStoreType(parser.StoreKey);
 
-                var inactive = await _db.Subscriptions
-                    .FirstOrDefaultAsync(s => s.UserId == userId && s.ProductUrl == url && !s.IsActive, cancellationToken);
-
-                Subscription subscription;
-
-                if (inactive is not null)
+                if (existing is not null)
                 {
-                    inactive.IsActive = true;
-                    inactive.ProductName = name;
-                    inactive.CurrentPrice = price;
-                    inactive.LastCheckedDate = DateTime.UtcNow;
-                    subscription = inactive;
+                    existing.IsActive = true;
+                    existing.StoreType = storeType;
+                    existing.ProductName = name;
+                    existing.CurrentPrice = price;
+                    existing.LastCheckedDate = DateTime.UtcNow;
+                    await _db.SaveChangesAsync(cancellationToken);
+
+                    return new CreateSubscriptionResult(CreateSubscriptionStatus.Reactivated, existing);
                 }
-                else
+
+                var subscription = new Subscription
                 {
-                    subscription = new Subscription
-                    {
-                        UserId = userId,
-                        ProductUrl = url,
-                        StoreType = storeType,
-                        ProductName = name,
-                        CurrentPrice = price,
-                        LastCheckedDate = DateTime.UtcNow
-                    };
-                    _db.Subscriptions.Add(subscription);
-                }
+                    UserId = userId,
+                    ProductUrl = normalizedUrl,
+                    StoreType = storeType,
+                    ProductName = name,
+                    CurrentPrice = price,
+                    LastCheckedDate = DateTime.UtcNow
+                };
+                _db.Subscriptions.Add(subscription);
 
                 await _db.SaveChangesAsync(cancellationToken);
 
-                var status = inactive is not null
-                    ? CreateSubscriptionStatus.Reactivated
-                    : CreateSubscriptionStatus.Created;
-
-                return new CreateSubscriptionResult(status, subscription);
+                return new CreateSubscriptionResult(CreateSubscriptionStatus.Created, subscription);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to create subscription for user {UserId} and url {Url}", userId, url);
+                _logger.LogError(ex, "Failed to create subscription for user {UserId} and url {Url}", userId, normalizedUrl);
 
                 return new CreateSubscriptionResult(CreateSubscriptionStatus.ParseFailed);
             }

@@ -117,6 +117,43 @@ namespace PriceSaver.Server.Tests.Services
                 Id = inactiveId,
                 UserId = UserId,
                 ProductUrl = Url,
+                StoreType = StoreType.Unknown,
+                IsActive = false,
+                ProductName = "Old name",
+                CurrentPrice = 10m,
+                NotifyOnIncrease = true
+            });
+            await db.SaveChangesAsync();
+
+            var parser = new FakePriceParser(
+                storeKey: "atb",
+                parse: (_, _) => Task.FromResult(("Refreshed", 99m)));
+            var sut = CreateService(db, [parser], out _);
+
+            var result = await sut.CreateSubscriptionAsync(UserId, "user", Url, CancellationToken.None);
+
+            result.Status.Should().Be(CreateSubscriptionStatus.Reactivated);
+            result.Subscription!.Id.Should().Be(inactiveId);
+            result.Subscription.IsActive.Should().BeTrue();
+            result.Subscription.StoreType.Should().Be(StoreType.ATB);
+            result.Subscription.ProductName.Should().Be("Refreshed");
+            result.Subscription.CurrentPrice.Should().Be(99m);
+            result.Subscription.NotifyOnIncrease.Should().BeTrue();
+            result.Subscription.LastCheckedDate.Should().NotBeNull();
+
+            db.Subscriptions.Should().ContainSingle();
+        }
+
+        [Fact]
+        public async Task CreateSubscriptionAsync_ReturnsReactivated_WhenUrlDiffersOnlyByTrailingSlash()
+        {
+            using var db = TestDbContextFactory.CreateInMemory();
+            var inactiveId = Guid.NewGuid();
+            db.Subscriptions.Add(new Subscription
+            {
+                Id = inactiveId,
+                UserId = UserId,
+                ProductUrl = "https://www.atbmarket.com/product/123",
                 IsActive = false,
                 ProductName = "Old name",
                 CurrentPrice = 10m
@@ -127,14 +164,14 @@ namespace PriceSaver.Server.Tests.Services
                 parse: (_, _) => Task.FromResult(("Refreshed", 99m)));
             var sut = CreateService(db, [parser], out _);
 
-            var result = await sut.CreateSubscriptionAsync(UserId, "user", Url, CancellationToken.None);
+            var result = await sut.CreateSubscriptionAsync(
+                UserId,
+                "user",
+                "https://www.atbmarket.com/product/123/",
+                CancellationToken.None);
 
             result.Status.Should().Be(CreateSubscriptionStatus.Reactivated);
             result.Subscription!.Id.Should().Be(inactiveId);
-            result.Subscription.IsActive.Should().BeTrue();
-            result.Subscription.ProductName.Should().Be("Refreshed");
-            result.Subscription.CurrentPrice.Should().Be(99m);
-
             db.Subscriptions.Should().ContainSingle();
         }
 
