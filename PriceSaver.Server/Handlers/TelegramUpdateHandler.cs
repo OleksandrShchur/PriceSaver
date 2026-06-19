@@ -15,7 +15,6 @@ namespace PriceSaver.Server.Handlers
         private readonly TelegramOptions _options;
         private readonly IUserService _userService;
         private readonly ISubscriptionHandler _subscriptionHandler;
-        private readonly IChannelPostService _channelPostService;
         private readonly ILogger<TelegramUpdateHandler> _logger;
 
         public TelegramUpdateHandler(
@@ -23,14 +22,12 @@ namespace PriceSaver.Server.Handlers
             IOptions<TelegramOptions> options,
             IUserService userService,
             ISubscriptionHandler subscriptionHandler,
-            IChannelPostService channelPostService,
             ILogger<TelegramUpdateHandler> logger)
         {
             _telegram = telegram;
             _options = options.Value;
             _userService = userService;
             _subscriptionHandler = subscriptionHandler;
-            _channelPostService = channelPostService;
             _logger = logger;
         }
 
@@ -139,42 +136,6 @@ namespace PriceSaver.Server.Handlers
                         callbackQuery.From.Id,
                         callbackQuery.Id,
                         subscriptionId,
-                        messageId,
-                        cancellationToken);
-                }
-                else if (callbackQuery.Data?.StartsWith("channel_post_approve_") == true)
-                {
-                    var postIdText = callbackQuery.Data["channel_post_approve_".Length..];
-                    var messageId = callbackQuery.Message?.MessageId ?? 0;
-
-                    if (!Guid.TryParse(postIdText, out var postId))
-                    {
-                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний Id публікації.", true, cancellationToken);
-                        return;
-                    }
-
-                    await _channelPostService.HandleApproveCallbackAsync(
-                        callbackQuery.From.Id,
-                        callbackQuery.Id,
-                        postId,
-                        messageId,
-                        cancellationToken);
-                }
-                else if (callbackQuery.Data?.StartsWith("channel_post_reject_") == true)
-                {
-                    var postIdText = callbackQuery.Data["channel_post_reject_".Length..];
-                    var messageId = callbackQuery.Message?.MessageId ?? 0;
-
-                    if (!Guid.TryParse(postIdText, out var postId))
-                    {
-                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний Id публікації.", true, cancellationToken);
-                        return;
-                    }
-
-                    await _channelPostService.HandleRejectCallbackAsync(
-                        callbackQuery.From.Id,
-                        callbackQuery.Id,
-                        postId,
                         messageId,
                         cancellationToken);
                 }

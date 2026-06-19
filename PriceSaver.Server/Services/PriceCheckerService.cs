@@ -83,20 +83,17 @@ namespace PriceSaver.Server.Services
         private readonly ApplicationDbContext _db;
         private readonly IPriceParser[] _parsers;
         private readonly ITelegramService _telegram;
-        private readonly IChannelPostService _channelPostService;
         private readonly ILogger<PriceCheckerService> _logger;
 
         public PriceCheckerService(
             ApplicationDbContext db,
             IEnumerable<IPriceParser> parsers,
             ITelegramService telegram,
-            IChannelPostService channelPostService,
             ILogger<PriceCheckerService> logger)
         {
             _db = db;
             _parsers = parsers.ToArray();
             _telegram = telegram;
-            _channelPostService = channelPostService;
             _logger = logger;
         }
 
@@ -109,7 +106,6 @@ namespace PriceSaver.Server.Services
             // Scenario 1: when a user receives price changes, send separate message per market.
             // Additionally, each message may contain not more than 1 table, and each table not more than 10 rows.
             var changesByUserAndMarket = new Dictionary<(long userId, StoreType storeType), List<PriceChangeRow>>();
-            var channelDropsByMarket = new Dictionary<StoreType, List<PriceChangeRow>>();
 
             var productGroups = subs.GroupBy(s => (s.ProductUrl, s.StoreType));
 
@@ -177,17 +173,6 @@ namespace PriceSaver.Server.Services
                             }
 
                             list.Add(new PriceChangeRow(name, sub.ProductUrl, old, price, changePercentText));
-
-                            if (price < old && _channelPostService.IsEnabled)
-                            {
-                                if (!channelDropsByMarket.TryGetValue(sub.StoreType, out var channelList))
-                                {
-                                    channelList = new List<PriceChangeRow>();
-                                    channelDropsByMarket[sub.StoreType] = channelList;
-                                }
-
-                                channelList.Add(new PriceChangeRow(name, sub.ProductUrl, old, price, changePercentText));
-                            }
                         }
                     }
 
@@ -227,38 +212,6 @@ namespace PriceSaver.Server.Services
                     partIndex++;
                 }
             }
-
-            if (channelDropsByMarket.Count > 0)
-            {
-                var channelMarkdown = BuildChannelDropsMarkdown(channelDropsByMarket);
-                await _channelPostService.SubmitForApprovalAsync(channelMarkdown, ct);
-            }
-        }
-
-        private static string BuildChannelDropsMarkdown(Dictionary<StoreType, List<PriceChangeRow>> dropsByMarket)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("📉 **Зниження цін**");
-            sb.AppendLine();
-
-            foreach (var entry in dropsByMarket.OrderBy(e => e.Key))
-            {
-                var marketName = entry.Key.GetDescription();
-                var rows = entry.Value;
-                var partsCount = (rows.Count + 9) / 10;
-                var partIndex = 0;
-
-                for (var i = 0; i < rows.Count; i += 10)
-                {
-                    var chunkSize = Math.Min(10, rows.Count - i);
-                    var chunk = rows.GetRange(i, chunkSize);
-                    sb.AppendLine(BuildMarketPriceChangesMarkdown(marketName, chunk, partIndex, partsCount));
-                    sb.AppendLine();
-                    partIndex++;
-                }
-            }
-
-            return sb.ToString().TrimEnd();
         }
     }
 }

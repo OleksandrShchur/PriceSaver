@@ -104,7 +104,6 @@ try
 
     builder.Services.AddSingleton<ITelegramService, TelegramService>();
     builder.Services.AddSingleton<ITelegramAlertService, TelegramAlertService>();
-    builder.Services.AddSingleton<IChannelPostService, ChannelPostService>();
 
     // Register handlers
     builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
