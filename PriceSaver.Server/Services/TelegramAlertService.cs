@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InputFiles;
@@ -8,10 +9,15 @@ namespace PriceSaver.Server.Services
     {
         private readonly IConfiguration _configuration;
         private readonly ILogger<TelegramAlertService> _logger;
+        private readonly TelegramOptions _options;
         private readonly Lazy<TelegramBotClient?> _client;
 
-        public TelegramAlertService(IConfiguration configuration, ILogger<TelegramAlertService> logger)
+        public TelegramAlertService(
+            IOptions<TelegramOptions> options,
+            IConfiguration configuration,
+            ILogger<TelegramAlertService> logger)
         {
+            _options = options.Value;
             _configuration = configuration;
             _logger = logger;
             _client = new Lazy<TelegramBotClient?>(CreateClient);
@@ -19,14 +25,11 @@ namespace PriceSaver.Server.Services
 
         public async Task SendErrorAlertAsync(string message, Exception? exception = null)
         {
-            if (!IsEnabled())
-                return;
-
             var client = _client.Value;
             var channelId = _configuration["TelegramAlerts:ChannelId"];
             if (client is null || string.IsNullOrWhiteSpace(channelId))
             {
-                _logger.LogError("Telegram alert skipped: TelegramAlerts:BotToken or TelegramAlerts:ChannelId is not configured");
+                _logger.LogError("Telegram alert skipped: TelegramAlerts:ChannelId is not configured");
                 return;
             }
 
@@ -53,14 +56,11 @@ namespace PriceSaver.Server.Services
 
         public async Task SendLogFileAsync(string filePath, string caption)
         {
-            if (!IsEnabled())
-                return;
-
             var client = _client.Value;
             var channelId = _configuration["TelegramAlerts:ChannelId"];
             if (client is null || string.IsNullOrWhiteSpace(channelId))
             {
-                _logger.LogError("Telegram log upload skipped: TelegramAlerts:BotToken or TelegramAlerts:ChannelId is not configured");
+                _logger.LogError("Telegram log upload skipped: TelegramAlerts:ChannelId is not configured");
                 return;
             }
 
@@ -81,16 +81,12 @@ namespace PriceSaver.Server.Services
             }
         }
 
-        private bool IsEnabled() =>
-            _configuration.GetValue("TelegramAlerts:Enabled", false);
-
         private TelegramBotClient? CreateClient()
         {
-            var token = _configuration["TelegramAlerts:BotToken"];
-            if (string.IsNullOrWhiteSpace(token))
+            if (string.IsNullOrWhiteSpace(_options.BotToken))
                 return null;
 
-            return new TelegramBotClient(token);
+            return new TelegramBotClient(_options.BotToken);
         }
 
         private static string EscapeMarkdown(string value) =>
