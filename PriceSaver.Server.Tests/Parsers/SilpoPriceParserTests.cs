@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
 using PriceSaver.Server.Models;
 using PriceSaver.Server.Parsers;
@@ -10,7 +11,7 @@ namespace PriceSaver.Server.Tests.Parsers
         private static SilpoPriceParser CreateParser(string body, HttpStatusCode status = HttpStatusCode.OK)
         {
             var handler = StubHttpMessageHandler.WithBody(body, status);
-            return new SilpoPriceParser(new HttpClient(handler));
+            return new SilpoPriceParser(new HttpClient(handler), NullLogger<SilpoPriceParser>.Instance);
         }
 
         [Theory]

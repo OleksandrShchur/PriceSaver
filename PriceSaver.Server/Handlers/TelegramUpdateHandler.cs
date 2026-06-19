@@ -15,6 +15,7 @@ namespace PriceSaver.Server.Handlers
         private readonly TelegramOptions _options;
         private readonly IUserService _userService;
         private readonly ISubscriptionHandler _subscriptionHandler;
+        private readonly IChannelPostService _channelPostService;
         private readonly ILogger<TelegramUpdateHandler> _logger;
 
         public TelegramUpdateHandler(
@@ -22,17 +23,28 @@ namespace PriceSaver.Server.Handlers
             IOptions<TelegramOptions> options,
             IUserService userService,
             ISubscriptionHandler subscriptionHandler,
+            IChannelPostService channelPostService,
             ILogger<TelegramUpdateHandler> logger)
         {
             _telegram = telegram;
             _options = options.Value;
             _userService = userService;
             _subscriptionHandler = subscriptionHandler;
+            _channelPostService = channelPostService;
             _logger = logger;
         }
 
         public async Task HandleAsync(Update update, CancellationToken cancellationToken = default)
         {
+            var userId = update.Message?.From?.Id
+                ?? update.CallbackQuery?.From?.Id;
+
+            _logger.LogDebug(
+                "Incoming update. UpdateId: {UpdateId}, Type: {Type}, UserId: {UserId}",
+                update.Id,
+                update.Type,
+                userId);
+
             // Handle callback queries (button clicks)
             if (update.CallbackQuery is { Data: not null } callbackQuery)
             {
@@ -51,6 +63,12 @@ namespace PriceSaver.Server.Handlers
 
             if (text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogDebug(
+                    "Received /{Command} from UserId: {UserId} (@{Username})",
+                    "start",
+                    chatId,
+                    message.From?.Username);
+
                 await _userService.EnsureUserExistsAsync(chatId, message.From?.Username, cancellationToken);
                 await SendWelcomeMessageAsync(chatId, cancellationToken);
 
@@ -124,11 +142,51 @@ namespace PriceSaver.Server.Handlers
                         messageId,
                         cancellationToken);
                 }
+                else if (callbackQuery.Data?.StartsWith("channel_post_approve_") == true)
+                {
+                    var postIdText = callbackQuery.Data["channel_post_approve_".Length..];
+                    var messageId = callbackQuery.Message?.MessageId ?? 0;
+
+                    if (!Guid.TryParse(postIdText, out var postId))
+                    {
+                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний Id публікації.", true, cancellationToken);
+                        return;
+                    }
+
+                    await _channelPostService.HandleApproveCallbackAsync(
+                        callbackQuery.From.Id,
+                        callbackQuery.Id,
+                        postId,
+                        messageId,
+                        cancellationToken);
+                }
+                else if (callbackQuery.Data?.StartsWith("channel_post_reject_") == true)
+                {
+                    var postIdText = callbackQuery.Data["channel_post_reject_".Length..];
+                    var messageId = callbackQuery.Message?.MessageId ?? 0;
+
+                    if (!Guid.TryParse(postIdText, out var postId))
+                    {
+                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректний Id публікації.", true, cancellationToken);
+                        return;
+                    }
+
+                    await _channelPostService.HandleRejectCallbackAsync(
+                        callbackQuery.From.Id,
+                        callbackQuery.Id,
+                        postId,
+                        messageId,
+                        cancellationToken);
+                }
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle callback query {CallbackData}", callbackQuery.Data);
-                await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Сталася помилка.", true, cancellationToken);
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQuery.Id,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    true,
+                    cancellationToken);
             }
         }
 

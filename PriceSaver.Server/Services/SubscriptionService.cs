@@ -49,6 +49,11 @@ namespace PriceSaver.Server.Services
             subscription.IsActive = false;
             await _db.SaveChangesAsync(cancellationToken);
 
+            _logger.LogInformation(
+                "Subscription deleted (soft). UserId: {UserId}, SubscriptionId: {Id}",
+                userId,
+                subscriptionId);
+
             return new DeactivateSubscriptionResult(DeactivateSubscriptionStatus.Success);
         }
 
@@ -70,11 +75,24 @@ namespace PriceSaver.Server.Services
         {
             var normalizedUrl = ProductUrlNormalizer.Normalize(url);
 
+            _logger.LogDebug(
+                "Checking for existing subscription. UserId: {UserId}, Url: {Url}",
+                userId,
+                normalizedUrl);
+
             var existing = await _db.Subscriptions
                 .FirstOrDefaultAsync(s => s.UserId == userId && s.ProductUrl == normalizedUrl, cancellationToken);
 
             if (existing is { IsActive: true })
+            {
+                _logger.LogWarning(
+                    "Duplicate subscription detected for UserId: {UserId}, Url: {Url}. Subscription already active (Id: {ExistingId})",
+                    userId,
+                    normalizedUrl,
+                    existing.Id);
+
                 return new CreateSubscriptionResult(CreateSubscriptionStatus.AlreadyActive, existing);
+            }
 
             var parser = _parsers.FirstOrDefault(p => p.CanParse(normalizedUrl));
             if (parser is null)
@@ -95,6 +113,12 @@ namespace PriceSaver.Server.Services
 
                 if (existing is not null)
                 {
+                    _logger.LogWarning(
+                        "Reactivating previously deleted subscription. UserId: {UserId}, SubscriptionId: {Id}, Url: {Url}",
+                        userId,
+                        existing.Id,
+                        normalizedUrl);
+
                     existing.IsActive = true;
                     existing.StoreType = storeType;
                     existing.ProductName = name;
@@ -117,6 +141,13 @@ namespace PriceSaver.Server.Services
                 _db.Subscriptions.Add(subscription);
 
                 await _db.SaveChangesAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "New subscription created. UserId: {UserId}, ProductName: '{ProductName}', Store: {Store}, SubscriptionId: {SubscriptionId}",
+                    userId,
+                    name,
+                    storeType,
+                    subscription.Id);
 
                 return new CreateSubscriptionResult(CreateSubscriptionStatus.Created, subscription);
             }

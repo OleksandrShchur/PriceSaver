@@ -56,6 +56,9 @@ namespace PriceSaver.Server.Tests.Helpers
                 services.RemoveAll<ITelegramService>();
                 services.AddSingleton<ITelegramService>(Telegram);
 
+                services.RemoveAll<ITelegramAlertService>();
+                services.AddSingleton<ITelegramAlertService, NoOpTelegramAlertService>();
+
                 // Replace the real parsers with an offline fake.
                 services.RemoveAll<IPriceParser>();
                 services.AddSingleton<IPriceParser>(Parser);

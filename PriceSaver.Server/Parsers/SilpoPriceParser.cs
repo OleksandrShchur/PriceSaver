@@ -8,6 +8,8 @@ namespace PriceSaver.Server.Parsers
 {
     public class SilpoPriceParser : IPriceParser
     {
+        private const string Source = "Silpo";
+
         // The "00000…0" branch ID returns the default/online price for any product.
         private const string SilpoApiBase =
             "https://sf-ecom-api.silpo.ua/v1/uk/branches/00000000-0000-0000-0000-000000000000/products/";
@@ -19,10 +21,12 @@ namespace PriceSaver.Server.Parsers
                 RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         private readonly HttpClient _http;
+        private readonly ILogger<SilpoPriceParser> _logger;
 
-        public SilpoPriceParser(HttpClient http)
+        public SilpoPriceParser(HttpClient http, ILogger<SilpoPriceParser> logger)
         {
             _http = http;
+            _logger = logger;
         }
 
         public string StoreKey => "silpo";
@@ -42,15 +46,29 @@ namespace PriceSaver.Server.Parsers
             string url,
             CancellationToken ct = default)
         {
-            var slug = ExtractSlug(url);
+            _logger.LogDebug("Starting price parse for product URL: {Url}", url);
 
-            using var json = await FetchProductJsonAsync(slug, url, ct);
+            try
+            {
+                var slug = ExtractSlug(url);
+                using var json = await FetchProductJsonAsync(slug, url, ct);
+                var (name, price, loyaltyPrice) = ParseProduct(json, url);
 
-            return ParseProduct(json, url);
+                _logger.LogInformation(
+                    "Successfully parsed price for '{ProductName}' from {Source}: {Price} UAH (loyalty: {LoyaltyPrice})",
+                    name,
+                    Source,
+                    price,
+                    loyaltyPrice);
+
+                return (name, price);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Price parse failed for URL: {Url} from {Source}", url, Source);
+                throw;
+            }
         }
-
-        private sealed class PriceParseException(string message)
-            : Exception(message);
 
         private string ExtractSlug(string url)
         {
@@ -58,7 +76,7 @@ namespace PriceSaver.Server.Parsers
 
             if (!match.Success)
             {
-                throw new PriceParseException($"😔 Не вдалося розпізнати посилання на товар Сільпо.\n\n🔗 {url}");
+                throw new PriceParseException($"Could not extract Silpo product slug from URL: {url}");
             }
 
             return match.Groups["slug"].Value;
@@ -79,10 +97,17 @@ namespace PriceSaver.Server.Parsers
                 HttpCompletionOption.ResponseHeadersRead,
                 ct);
 
+            var contentLength = response.Content.Headers.ContentLength;
+
+            _logger.LogDebug(
+                "Received response from {Source} parser. StatusCode: {StatusCode}, ContentLength: {Length}",
+                Source,
+                response.StatusCode,
+                contentLength);
+
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                throw new PriceParseException(
-                    $"😔 Товар не знайдено — можливо, він більше не продається.\n\n🔗 {originalUrl}");
+                throw new PriceParseException($"Silpo product not found for URL: {originalUrl}");
             }
 
             response.EnsureSuccessStatusCode();
@@ -95,7 +120,7 @@ namespace PriceSaver.Server.Parsers
                 cancellationToken: ct);
         }
 
-        private static (string Name, decimal Price) ParseProduct(
+        private (string Name, decimal Price, decimal LoyaltyPrice) ParseProduct(
             JsonDocument doc,
             string url)
         {
@@ -112,6 +137,12 @@ namespace PriceSaver.Server.Parsers
 
             if (string.IsNullOrWhiteSpace(name))
             {
+                _logger.LogWarning(
+                    "Price element not found in response from {Source} for URL: {Url}. Raw content length: {Length}",
+                    Source,
+                    url,
+                    doc.RootElement.GetRawText().Length);
+
                 throw new InvalidOperationException(
                     "Silpo API: product name not found in response.");
             }
@@ -123,6 +154,7 @@ namespace PriceSaver.Server.Parsers
             // "priceToShow" - actual displayed price (preferred)
 
             decimal price = 0;
+            decimal loyaltyPrice = 0;
 
             if (root.TryGetProperty("priceToShow", out var pts)
                 && pts.TryGetDecimal(out var p1)
@@ -143,13 +175,30 @@ namespace PriceSaver.Server.Parsers
                 price = p3;
             }
 
+            if (root.TryGetProperty("discount", out var loyaltyProp)
+                && loyaltyProp.TryGetDecimal(out var loyalty)
+                && loyalty > 0)
+            {
+                loyaltyPrice = loyalty;
+            }
+            else
+            {
+                loyaltyPrice = price;
+            }
+
             if (price <= 0)
             {
+                _logger.LogWarning(
+                    "Price element not found in response from {Source} for URL: {Url}. Raw content length: {Length}",
+                    Source,
+                    url,
+                    doc.RootElement.GetRawText().Length);
+
                 throw new InvalidOperationException(
                     $"Silpo API: could not extract a valid price from response for {url}.");
             }
 
-            return (name!, price);
+            return (name!, price, loyaltyPrice);
         }
     }
 }

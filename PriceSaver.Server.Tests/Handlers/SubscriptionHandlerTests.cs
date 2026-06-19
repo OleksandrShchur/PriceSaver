@@ -148,7 +148,7 @@ namespace PriceSaver.Server.Tests.Handlers
             yield return new object[] { new CreateSubscriptionResult(CreateSubscriptionStatus.AlreadyActive, sub), "вже існує" };
             yield return new object[] { new CreateSubscriptionResult(CreateSubscriptionStatus.UnsupportedStore), "не підтримується" };
             yield return new object[] { new CreateSubscriptionResult(CreateSubscriptionStatus.LimitReached), "ліміту" };
-            yield return new object[] { new CreateSubscriptionResult(CreateSubscriptionStatus.ParseFailed), "Неможливо отримати" };
+            yield return new object[] { new CreateSubscriptionResult(CreateSubscriptionStatus.ParseFailed), "Не вдалося отримати" };
         }
 
         [Theory]
