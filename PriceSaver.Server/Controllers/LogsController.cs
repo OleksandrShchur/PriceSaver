@@ -21,17 +21,14 @@ namespace PriceSaver.Server.Controllers
             _logger = logger;
         }
 
-        [HttpGet("yesterday")]
-        public async Task<IActionResult> GetYesterdayLogs([FromQuery] string? key)
+        [HttpPost("yesterday")]
+        public async Task<IActionResult> GetYesterdayLogs()
         {
             var secretKey = _configuration["LogRetrieval:SecretKey"];
+            var key = Request.Headers["X-Api-Key"].ToString();
             if (string.IsNullOrEmpty(secretKey) || key != secretKey)
             {
-                _logger.LogWarning(
-                    "Unauthorized log retrieval attempt from IP {IP}",
-                    HttpContext.Connection.RemoteIpAddress);
-
-                return Unauthorized(new { error = "Unauthorized" });
+                return Unauthorized();
             }
 
             var yesterday = DateTime.UtcNow.AddDays(-1);
@@ -49,7 +46,7 @@ namespace PriceSaver.Server.Controllers
                 return NotFound(new { error = "Log file for yesterday not found" });
             }
 
-            var caption = $"📋 PriceSaver Logs — {yesterday:yyyy-MM-dd}";
+            var caption = $"📋 PriceSaver Logs — {yesterday:dd.MM.yyyy}";
             await _alertService.SendLogFileAsync(fullPath, caption);
 
             var ip = HttpContext.Connection.RemoteIpAddress;
@@ -61,7 +58,7 @@ namespace PriceSaver.Server.Controllers
             return Ok(new
             {
                 message = "Log file sent to Telegram channel",
-                date = yesterday.ToString("yyyy-MM-dd")
+                date = yesterday.ToString("dd.MM.yyyy")
             });
         }
     }
