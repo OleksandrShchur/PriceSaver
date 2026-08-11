@@ -134,7 +134,7 @@ namespace PriceSaver.Server.Tests.Handlers
                 CallbackQuery = new CallbackQuery
                 {
                     Id = "cbq-1",
-                    Data = $"sub_remove_{subscriptionId}",
+                    Data = $"sub_remove_0_{subscriptionId}",
                     From = new User { Id = ChatId, FirstName = "Test" },
                     Message = new Message
                     {
@@ -147,7 +147,70 @@ namespace PriceSaver.Server.Tests.Handlers
             await sut.HandleAsync(update, CancellationToken.None);
 
             subscriptionHandler.Verify(s => s.HandleRemoveSubscriptionCallbackAsync(
-                    ChatId, "cbq-1", subscriptionId.ToString(), 321, It.IsAny<CancellationToken>()),
+                    ChatId, "cbq-1", 0, subscriptionId.ToString(), 321, It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnCallbackQuery_RoutesToSelectHandler()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler);
+
+            var subscriptionId = Guid.NewGuid();
+            var update = new Update
+            {
+                CallbackQuery = new CallbackQuery
+                {
+                    Id = "cbq-sel",
+                    Data = $"sub_sel_1_{subscriptionId}",
+                    From = new User { Id = ChatId, FirstName = "Test" },
+                    Message = new Message
+                    {
+                        MessageId = 10,
+                        Chat = new Chat { Id = ChatId, Type = ChatType.Private }
+                    }
+                }
+            };
+
+            await sut.HandleAsync(update, CancellationToken.None);
+
+            subscriptionHandler.Verify(s => s.HandleSelectSubscriptionCallbackAsync(
+                    ChatId, "cbq-sel", 1, subscriptionId.ToString(), 10, It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnCallbackQuery_RoutesToListPageHandler()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler);
+
+            var update = new Update
+            {
+                CallbackQuery = new CallbackQuery
+                {
+                    Id = "cbq-list",
+                    Data = "sub_list_2",
+                    From = new User { Id = ChatId, FirstName = "Test" },
+                    Message = new Message
+                    {
+                        MessageId = 11,
+                        Chat = new Chat { Id = ChatId, Type = ChatType.Private }
+                    }
+                }
+            };
+
+            await sut.HandleAsync(update, CancellationToken.None);
+
+            subscriptionHandler.Verify(s => s.HandleListPageCallbackAsync(
+                    ChatId, "cbq-list", 2, 11, It.IsAny<CancellationToken>()),
                 Times.Once);
         }
     }

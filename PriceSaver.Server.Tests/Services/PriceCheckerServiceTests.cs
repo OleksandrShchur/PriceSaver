@@ -4,6 +4,7 @@ using PriceSaver.Server.Models;
 using PriceSaver.Server.Parsers;
 using PriceSaver.Server.Services;
 using PriceSaver.Server.Tests.Helpers;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace PriceSaver.Server.Tests.Services
 {
@@ -73,6 +74,7 @@ namespace PriceSaver.Server.Tests.Services
                         s.Contains("АТБ") &&
                         s.Contains("| Товар | Стара ціна | Нова ціна | Зміна (%) |") &&
                         s.Contains($"| [Tracked product]({Url}) | 100 | 80 | -20% |")),
+                    It.IsAny<IReplyMarkup?>(),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }
@@ -97,6 +99,7 @@ namespace PriceSaver.Server.Tests.Services
                         s.Contains("АТБ") &&
                         s.Contains("| Товар | Стара ціна | Нова ціна | Зміна (%) |") &&
                         s.Contains($"| [Tracked product]({Url}) | 100 | 120 | +20% |")),
+                    It.IsAny<IReplyMarkup?>(),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }
@@ -118,7 +121,7 @@ namespace PriceSaver.Server.Tests.Services
             db.PriceHistories.Should().ContainSingle(p => p.SubscriptionId == sub.Id);
             // ... but no message is sent for an unwanted increase.
             telegram.Verify(t => t.SendRichMessageAsync(
-                    It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                    It.IsAny<long>(), It.IsAny<string>(), It.IsAny<IReplyMarkup?>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
@@ -137,7 +140,7 @@ namespace PriceSaver.Server.Tests.Services
 
             db.PriceHistories.Should().BeEmpty();
             telegram.Verify(t => t.SendRichMessageAsync(
-                    It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                    It.IsAny<long>(), It.IsAny<string>(), It.IsAny<IReplyMarkup?>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
 
@@ -165,11 +168,13 @@ namespace PriceSaver.Server.Tests.Services
             telegram.Verify(t => t.SendRichMessageAsync(
                     UserId,
                     It.IsAny<string>(),
+                    It.IsAny<IReplyMarkup?>(),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
             telegram.Verify(t => t.SendRichMessageAsync(
                     secondUserId,
                     It.IsAny<string>(),
+                    It.IsAny<IReplyMarkup?>(),
                     It.IsAny<CancellationToken>()),
                 Times.Once);
         }
