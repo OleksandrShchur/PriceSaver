@@ -115,26 +115,72 @@ namespace PriceSaver.Server.Handlers
         {
             try
             {
-                if (callbackQuery.Data?.StartsWith("sub_remove_") == true)
-                {
-                    var subscriptionId = callbackQuery.Data["sub_remove_".Length..];
-                    var messageId = callbackQuery.Message?.MessageId ?? 0;
+                var data = callbackQuery.Data;
+                var messageId = callbackQuery.Message?.MessageId ?? 0;
 
-                    await _subscriptionHandler.HandleRemoveSubscriptionCallbackAsync(
+                if (data?.StartsWith("sub_sel_") == true)
+                {
+                    var payload = data["sub_sel_".Length..];
+                    if (!SubscriptionHandler.TryParsePagedSubscriptionCallback(payload, out var page, out var subscriptionId))
+                    {
+                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректні дані кнопки.", true, cancellationToken);
+                        return;
+                    }
+
+                    await _subscriptionHandler.HandleSelectSubscriptionCallbackAsync(
                         callbackQuery.From.Id,
                         callbackQuery.Id,
+                        page,
                         subscriptionId,
                         messageId,
                         cancellationToken);
                 }
-                else if (callbackQuery.Data?.StartsWith("sub_toggle_increase_") == true)
+                else if (data?.StartsWith("sub_list_") == true)
                 {
-                    var subscriptionId = callbackQuery.Data["sub_toggle_increase_".Length..];
-                    var messageId = callbackQuery.Message?.MessageId ?? 0;
+                    var pageText = data["sub_list_".Length..];
+                    if (!int.TryParse(pageText, out var page))
+                    {
+                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректні дані кнопки.", true, cancellationToken);
+                        return;
+                    }
+
+                    await _subscriptionHandler.HandleListPageCallbackAsync(
+                        callbackQuery.From.Id,
+                        callbackQuery.Id,
+                        page,
+                        messageId,
+                        cancellationToken);
+                }
+                else if (data?.StartsWith("sub_remove_") == true)
+                {
+                    var payload = data["sub_remove_".Length..];
+                    if (!SubscriptionHandler.TryParsePagedSubscriptionCallback(payload, out var page, out var subscriptionId))
+                    {
+                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректні дані кнопки.", true, cancellationToken);
+                        return;
+                    }
+
+                    await _subscriptionHandler.HandleRemoveSubscriptionCallbackAsync(
+                        callbackQuery.From.Id,
+                        callbackQuery.Id,
+                        page,
+                        subscriptionId,
+                        messageId,
+                        cancellationToken);
+                }
+                else if (data?.StartsWith("sub_toggle_increase_") == true)
+                {
+                    var payload = data["sub_toggle_increase_".Length..];
+                    if (!SubscriptionHandler.TryParsePagedSubscriptionCallback(payload, out var page, out var subscriptionId))
+                    {
+                        await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Некоректні дані кнопки.", true, cancellationToken);
+                        return;
+                    }
 
                     await _subscriptionHandler.HandleToggleNotifyOnIncreaseCallbackAsync(
                         callbackQuery.From.Id,
                         callbackQuery.Id,
+                        page,
                         subscriptionId,
                         messageId,
                         cancellationToken);
@@ -177,7 +223,7 @@ namespace PriceSaver.Server.Handlers
                                    "📌 <b>Інструкція користувача:</b>\n" +
                                    "• Надішліть будь-яке пряме посилання на товар, щоб увімкнути моніторинг\n" +
                                    "• Натисніть 📋 <b>Мої підписки</b>, щоб побачити список ваших товарів\n" +
-                                   "• Використовуйте кнопку 🗑️ <b>Видалити</b> під товаром, щоб скасувати стеження\n\n" +
+                                   "• Оберіть номер товару в списку, щоб змінити сповіщення або видалити підписку\n\n" +
                                    "🚀 <i>Залишилися питання? Просто надішліть посилання на товар!</i>";
 
             await _telegram.SendMessageWithKeyboardAsync(

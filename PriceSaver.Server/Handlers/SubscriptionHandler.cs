@@ -1,5 +1,6 @@
-﻿using System.Net;
+﻿using System.Text;
 using PriceSaver.Server.Extensions;
+using PriceSaver.Server.Helpers;
 using PriceSaver.Server.Models;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
@@ -11,6 +12,9 @@ namespace PriceSaver.Server.Handlers
 {
     public class SubscriptionHandler : ISubscriptionHandler
     {
+        internal const int PageSize = 10;
+        private const int NumberButtonsPerRow = 5;
+
         private readonly ISubscriptionService _subscriptionService;
         private readonly ITelegramService _telegram;
         private readonly ILogger<SubscriptionHandler> _logger;
@@ -49,13 +53,20 @@ namespace PriceSaver.Server.Handlers
                     return;
                 }
 
-                foreach (var subscription in subscriptions)
+                var sent = await _telegram.SendRichMessageAsync(
+                    chatId,
+                    BuildSubscriptionsListMarkdown(subscriptions, page: 0),
+                    BuildListKeyboard(subscriptions, page: 0),
+                    cancellationToken);
+
+                if (!sent)
                 {
-                    await _telegram.SendMessageWithKeyboardAsync(
+                    await _telegram.SendMessageAsync(
                         chatId,
-                        BuildSubscriptionMessage(subscription),
-                        BuildSubscriptionKeyboard(subscription),
+                        "⚠️ Для перегляду підписок потрібна актуальна версія Telegram.\n" +
+                        "Будь ласка, <b>оновіть Telegram</b>, щоб користуватися всіма функціями бота.",
                         cancellationToken);
+                    return;
                 }
 
                 _logger.LogInformation(
@@ -73,7 +84,83 @@ namespace PriceSaver.Server.Handlers
             }
         }
 
-        public async Task HandleRemoveSubscriptionCallbackAsync(long chatId, string callbackQueryId, string subscriptionId, int messageId, CancellationToken cancellationToken)
+        public async Task HandleSelectSubscriptionCallbackAsync(
+            long chatId,
+            string callbackQueryId,
+            int page,
+            string subscriptionId,
+            int messageId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (!Guid.TryParse(subscriptionId, out var subscriptionGuid))
+                {
+                    await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Некоректний Id підписки.", true, cancellationToken);
+                    return;
+                }
+
+                var subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(chatId, cancellationToken);
+                var subscription = subscriptions.FirstOrDefault(s => s.Id == subscriptionGuid);
+                if (subscription is null)
+                {
+                    await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Підписку не знайдено.", true, cancellationToken);
+                    await ShowListPageAsync(chatId, messageId, subscriptions, page, cancellationToken);
+                    return;
+                }
+
+                var safePage = ClampPage(page, subscriptions.Count);
+                await _telegram.EditRichMessageAsync(
+                    chatId,
+                    messageId,
+                    BuildDetailMarkdown(subscription),
+                    BuildDetailKeyboard(subscription, safePage),
+                    cancellationToken);
+
+                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled error in /{Command} handler for UserId: {UserId}", "sub_sel", chatId);
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQueryId,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    true,
+                    cancellationToken);
+            }
+        }
+
+        public async Task HandleListPageCallbackAsync(
+            long chatId,
+            string callbackQueryId,
+            int page,
+            int messageId,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(chatId, cancellationToken);
+                await ShowListPageAsync(chatId, messageId, subscriptions, page, cancellationToken);
+                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, cancellationToken: cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled error in /{Command} handler for UserId: {UserId}", "sub_list", chatId);
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQueryId,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    true,
+                    cancellationToken);
+            }
+        }
+
+        public async Task HandleRemoveSubscriptionCallbackAsync(
+            long chatId,
+            string callbackQueryId,
+            int page,
+            string subscriptionId,
+            int messageId,
+            CancellationToken cancellationToken)
         {
             try
             {
@@ -102,7 +189,13 @@ namespace PriceSaver.Server.Handlers
                     false,
                     cancellationToken);
 
-                await _telegram.DeleteMessageAsync(chatId, messageId, cancellationToken);
+                if (messageId <= 0)
+                {
+                    return;
+                }
+
+                var subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(chatId, cancellationToken);
+                await ShowListPageAsync(chatId, messageId, subscriptions, page, cancellationToken);
             }
             catch (Exception ex)
             {
@@ -115,7 +208,13 @@ namespace PriceSaver.Server.Handlers
             }
         }
 
-        public async Task HandleToggleNotifyOnIncreaseCallbackAsync(long chatId, string callbackQueryId, string subscriptionId, int messageId, CancellationToken cancellationToken)
+        public async Task HandleToggleNotifyOnIncreaseCallbackAsync(
+            long chatId,
+            string callbackQueryId,
+            int page,
+            string subscriptionId,
+            int messageId,
+            CancellationToken cancellationToken)
         {
             try
             {
@@ -140,11 +239,11 @@ namespace PriceSaver.Server.Handlers
 
                 if (messageId > 0)
                 {
-                    await _telegram.EditMessageTextAsync(
+                    await _telegram.EditRichMessageAsync(
                         chatId,
                         messageId,
-                        BuildSubscriptionMessage(result.Subscription),
-                        BuildSubscriptionKeyboard(result.Subscription),
+                        BuildDetailMarkdown(result.Subscription),
+                        BuildDetailKeyboard(result.Subscription, page),
                         cancellationToken);
                 }
 
@@ -208,29 +307,125 @@ namespace PriceSaver.Server.Handlers
             }
         }
 
-        private static string BuildAlreadyActiveMessage(Subscription subscription)
+        private async Task ShowListPageAsync(
+            long chatId,
+            int messageId,
+            IReadOnlyList<Subscription> subscriptions,
+            int page,
+            CancellationToken cancellationToken)
         {
-            var safeName = WebUtility.HtmlEncode(subscription.ProductName);
-            var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
-            var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
-            return $"ℹ️ <b>Ця підписка вже існує у Вашому списку.</b>\n\n" +
-                   $"📦 <a href=\"{safeProductUrl}\"><b>{safeName}</b></a>\n" +
-                   $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
-                   $"💰 <b>Поточна ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
+            if (subscriptions.Count == 0)
+            {
+                await _telegram.EditRichMessageAsync(
+                    chatId,
+                    messageId,
+                    "⚠️ **У Вас немає активних підписок.**",
+                    new InlineKeyboardMarkup(Array.Empty<InlineKeyboardButton[]>()),
+                    cancellationToken);
+                return;
+            }
+
+            var safePage = ClampPage(page, subscriptions.Count);
+            await _telegram.EditRichMessageAsync(
+                chatId,
+                messageId,
+                BuildSubscriptionsListMarkdown(subscriptions, safePage),
+                BuildListKeyboard(subscriptions, safePage),
+                cancellationToken);
         }
 
-        private static string BuildSubscriptionMessage(Subscription subscription)
+        internal static string BuildSubscriptionsListMarkdown(IReadOnlyList<Subscription> subscriptions, int page)
         {
-            var safeProductName = WebUtility.HtmlEncode(subscription.ProductName);
-            var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
-            var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
+            var safePage = ClampPage(page, subscriptions.Count);
+            var start = safePage * PageSize;
+            var endExclusive = Math.Min(start + PageSize, subscriptions.Count);
+            var sb = new StringBuilder();
 
-            return $"📦 <a href=\"{safeProductUrl}\"><b>{safeProductName}</b></a>\n\n" +
-                   $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
-                   $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
+            sb.AppendLine($"📋 **Мої підписки** ({start + 1}–{endExclusive} з {subscriptions.Count})");
+            sb.AppendLine();
+            sb.AppendLine("| # | Товар | Магазин | Ціна | ↑ |");
+            sb.AppendLine("|:-:|:------|:--------|-----:|:-:|");
+
+            for (var i = start; i < endExclusive; i++)
+            {
+                var subscription = subscriptions[i];
+                var number = i + 1;
+                var product = RichMarkdown.FormatProductLink(
+                    subscription.ProductName ?? string.Empty,
+                    subscription.ProductUrl ?? string.Empty);
+                var store = RichMarkdown.EscapeTableCell(subscription.StoreType.GetDescription());
+                var notifyIcon = subscription.NotifyOnIncrease ? "🔔" : "🔕";
+
+                sb.AppendLine(
+                    $"| {number} | {product} | {store} | {subscription.CurrentPrice:0.##} | {notifyIcon} |");
+            }
+
+            sb.AppendLine();
+            sb.Append("Натисніть номер товару для керування.");
+            return sb.ToString();
         }
 
-        private static InlineKeyboardMarkup BuildSubscriptionKeyboard(Subscription subscription)
+        internal static InlineKeyboardMarkup BuildListKeyboard(IReadOnlyList<Subscription> subscriptions, int page)
+        {
+            var safePage = ClampPage(page, subscriptions.Count);
+            var start = safePage * PageSize;
+            var countOnPage = Math.Min(PageSize, subscriptions.Count - start);
+            var rows = new List<InlineKeyboardButton[]>();
+
+            for (var offset = 0; offset < countOnPage; offset += NumberButtonsPerRow)
+            {
+                var rowCount = Math.Min(NumberButtonsPerRow, countOnPage - offset);
+                var row = new InlineKeyboardButton[rowCount];
+                for (var i = 0; i < rowCount; i++)
+                {
+                    var index = start + offset + i;
+                    var subscription = subscriptions[index];
+                    var label = (index + 1).ToString();
+                    row[i] = InlineKeyboardButton.WithCallbackData(label, $"sub_sel_{safePage}_{subscription.Id}");
+                }
+
+                rows.Add(row);
+            }
+
+            var totalPages = GetTotalPages(subscriptions.Count);
+            if (totalPages > 1)
+            {
+                var nav = new List<InlineKeyboardButton>();
+                if (safePage > 0)
+                {
+                    nav.Add(InlineKeyboardButton.WithCallbackData("◀", $"sub_list_{safePage - 1}"));
+                }
+
+                nav.Add(InlineKeyboardButton.WithCallbackData($"{safePage + 1}/{totalPages}", $"sub_list_{safePage}"));
+
+                if (safePage < totalPages - 1)
+                {
+                    nav.Add(InlineKeyboardButton.WithCallbackData("▶", $"sub_list_{safePage + 1}"));
+                }
+
+                rows.Add(nav.ToArray());
+            }
+
+            return new InlineKeyboardMarkup(rows);
+        }
+
+        internal static string BuildDetailMarkdown(Subscription subscription)
+        {
+            var product = RichMarkdown.FormatProductLink(
+                subscription.ProductName ?? string.Empty,
+                subscription.ProductUrl ?? string.Empty);
+            var store = RichMarkdown.EscapeTableCell(subscription.StoreType.GetDescription());
+            var notifyState = subscription.NotifyOnIncrease
+                ? "🔔 Сповіщення про здорожчання увімкнено"
+                : "🔕 Сповіщення про здорожчання вимкнено";
+
+            return $"📦 {product}\n\n" +
+                   $"🏪 **Магазин:** {store}\n" +
+                   $"💰 **Ціна:** `{subscription.CurrentPrice:0.##}` UAH\n" +
+                   $"{notifyState}";
+        }
+
+        internal static InlineKeyboardMarkup BuildDetailKeyboard(Subscription subscription, int page)
         {
             var notifyButtonText = subscription.NotifyOnIncrease
                 ? "🔕 Не сповіщати про здорожчання"
@@ -238,20 +433,92 @@ namespace PriceSaver.Server.Handlers
 
             return new InlineKeyboardMarkup(new[]
             {
-                new[] { InlineKeyboardButton.WithCallbackData(notifyButtonText, $"sub_toggle_increase_{subscription.Id}") },
-                new[] { InlineKeyboardButton.WithCallbackData("🗑️ Видалити", $"sub_remove_{subscription.Id}") }
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData(
+                        notifyButtonText,
+                        $"sub_toggle_increase_{page}_{subscription.Id}")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData(
+                        "🗑️ Видалити",
+                        $"sub_remove_{page}_{subscription.Id}")
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("⬅️ Назад", $"sub_list_{page}")
+                }
             });
+        }
+
+        private static string BuildAlreadyActiveMessage(Subscription subscription)
+        {
+            var safeName = System.Net.WebUtility.HtmlEncode(subscription.ProductName);
+            var safeStoreDescription = System.Net.WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
+            var safeProductUrl = System.Net.WebUtility.HtmlEncode(subscription.ProductUrl);
+            return $"ℹ️ <b>Ця підписка вже існує у Вашому списку.</b>\n\n" +
+                   $"📦 <a href=\"{safeProductUrl}\"><b>{safeName}</b></a>\n" +
+                   $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
+                   $"💰 <b>Поточна ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
         }
 
         private static string BuildConfirmationMessage(Subscription subscription)
         {
-            var safeName = WebUtility.HtmlEncode(subscription.ProductName);
-            var safeStoreDescription = WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
-            var safeProductUrl = WebUtility.HtmlEncode(subscription.ProductUrl);
+            var safeName = System.Net.WebUtility.HtmlEncode(subscription.ProductName);
+            var safeStoreDescription = System.Net.WebUtility.HtmlEncode(subscription.StoreType.GetDescription());
+            var safeProductUrl = System.Net.WebUtility.HtmlEncode(subscription.ProductUrl);
             return $"✅ <b>Підписку створено!</b>\n\n" +
                    $"📦 <a href=\"{safeProductUrl}\"><b>{safeName}</b></a>\n" +
                    $"🏪 <b>Магазин:</b> {safeStoreDescription}\n" +
                    $"💰 <b>Ціна:</b> <code>{subscription.CurrentPrice:0.##}</code> UAH";
+        }
+
+        internal static int ClampPage(int page, int totalCount)
+        {
+            if (totalCount <= 0)
+            {
+                return 0;
+            }
+
+            var totalPages = GetTotalPages(totalCount);
+            if (page < 0)
+            {
+                return 0;
+            }
+
+            if (page >= totalPages)
+            {
+                return totalPages - 1;
+            }
+
+            return page;
+        }
+
+        private static int GetTotalPages(int totalCount) =>
+            totalCount <= 0 ? 1 : (totalCount + PageSize - 1) / PageSize;
+
+        /// <summary>
+        /// Parses <c>{page}_{guid}</c> from callback payloads such as <c>sub_sel_0_{guid}</c>.
+        /// </summary>
+        public static bool TryParsePagedSubscriptionCallback(string payload, out int page, out string subscriptionId)
+        {
+            page = 0;
+            subscriptionId = string.Empty;
+
+            var separator = payload.IndexOf('_');
+            if (separator <= 0 || separator == payload.Length - 1)
+            {
+                return false;
+            }
+
+            if (!int.TryParse(payload[..separator], out page))
+            {
+                return false;
+            }
+
+            subscriptionId = payload[(separator + 1)..];
+            return !string.IsNullOrWhiteSpace(subscriptionId);
         }
     }
 }

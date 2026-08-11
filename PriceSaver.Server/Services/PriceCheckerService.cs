@@ -3,60 +3,19 @@ using PriceSaver.Server.Models;
 using Microsoft.EntityFrameworkCore;
 using PriceSaver.Server.Data;
 using PriceSaver.Server.Extensions;
+using PriceSaver.Server.Helpers;
 using PriceSaver.Server.Parsers;
 
 namespace PriceSaver.Server.Services
 {
     public class PriceCheckerService
     {
-        private const int MaxProductTitleLength = 45;
-
         private sealed record PriceChangeRow(
             string ProductName,
             string ProductUrl,
             decimal OldPrice,
             decimal NewPrice,
             string ChangePercentText);
-
-        private static string EscapeMarkdownTableCell(string value)
-        {
-            // Telegram parses GFM-like Markdown tables in rich messages.
-            // To keep cell content from breaking the table structure, we escape pipes.
-            return (value ?? string.Empty)
-                .Replace("\\", "\\\\")
-                .Replace("|", "\\|")
-                .Replace("\r", " ")
-                .Replace("\n", " ")
-                .Trim();
-        }
-
-        private static string EscapeMarkdownLinkText(string value)
-        {
-            return (value ?? string.Empty)
-                .Replace("\\", "\\\\")
-                .Replace("[", "\\[")
-                .Replace("]", "\\]")
-                .Replace("\r", " ")
-                .Replace("\n", " ")
-                .Trim();
-        }
-
-        private static string TruncateProductTitle(string value)
-        {
-            var text = (value ?? string.Empty).Trim();
-            if (text.Length <= MaxProductTitleLength)
-            {
-                return text;
-            }
-
-            return text[..(MaxProductTitleLength - 1)].TrimEnd() + "…";
-        }
-
-        private static string FormatProductCell(string productName, string productUrl)
-        {
-            var title = EscapeMarkdownLinkText(TruncateProductTitle(productName));
-            return $"[{title}]({productUrl})";
-        }
 
         private static string BuildMarketPriceChangesMarkdown(string marketName, IReadOnlyList<PriceChangeRow> rows, int partIndex, int partsCount)
         {
@@ -74,7 +33,7 @@ namespace PriceSaver.Server.Services
             foreach (var row in rows)
             {
                 sb.AppendLine(
-                    $"| {FormatProductCell(row.ProductName, row.ProductUrl)} | {row.OldPrice:0.##} | {row.NewPrice:0.##} | {EscapeMarkdownTableCell(row.ChangePercentText)} |");
+                    $"| {RichMarkdown.FormatProductLink(row.ProductName, row.ProductUrl)} | {row.OldPrice:0.##} | {row.NewPrice:0.##} | {RichMarkdown.EscapeTableCell(row.ChangePercentText)} |");
             }
 
             return sb.ToString().TrimEnd();
