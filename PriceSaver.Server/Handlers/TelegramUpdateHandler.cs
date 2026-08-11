@@ -33,6 +33,15 @@ namespace PriceSaver.Server.Handlers
 
         public async Task HandleAsync(Update update, CancellationToken cancellationToken = default)
         {
+            var userId = update.Message?.From?.Id
+                ?? update.CallbackQuery?.From?.Id;
+
+            _logger.LogDebug(
+                "Incoming update. UpdateId: {UpdateId}, Type: {Type}, UserId: {UserId}",
+                update.Id,
+                update.Type,
+                userId);
+
             // Handle callback queries (button clicks)
             if (update.CallbackQuery is { Data: not null } callbackQuery)
             {
@@ -51,6 +60,12 @@ namespace PriceSaver.Server.Handlers
 
             if (text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
             {
+                _logger.LogDebug(
+                    "Received /{Command} from UserId: {UserId} (@{Username})",
+                    "start",
+                    chatId,
+                    message.From?.Username);
+
                 await _userService.EnsureUserExistsAsync(chatId, message.From?.Username, cancellationToken);
                 await SendWelcomeMessageAsync(chatId, cancellationToken);
 
@@ -128,7 +143,11 @@ namespace PriceSaver.Server.Handlers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to handle callback query {CallbackData}", callbackQuery.Data);
-                await _telegram.AnswerCallbackQueryAsync(callbackQuery.Id, "Сталася помилка.", true, cancellationToken);
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQuery.Id,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    true,
+                    cancellationToken);
             }
         }
 

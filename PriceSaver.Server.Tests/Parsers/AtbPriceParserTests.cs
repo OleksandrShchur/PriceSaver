@@ -1,4 +1,5 @@
 using System.Net;
+using Microsoft.Extensions.Logging.Abstractions;
 using PriceSaver.Server.Models;
 using PriceSaver.Server.Parsers;
 using PriceSaver.Server.Tests.Helpers;
@@ -10,7 +11,7 @@ namespace PriceSaver.Server.Tests.Parsers
         private static AtbPriceParser CreateParser(string body, HttpStatusCode status = HttpStatusCode.OK)
         {
             var handler = StubHttpMessageHandler.WithBody(body, status, "text/plain");
-            return new AtbPriceParser(new HttpClient(handler));
+            return new AtbPriceParser(new HttpClient(handler), NullLogger<AtbPriceParser>.Instance);
         }
 
         [Theory]

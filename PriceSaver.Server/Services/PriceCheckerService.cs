@@ -85,7 +85,11 @@ namespace PriceSaver.Server.Services
         private readonly ITelegramService _telegram;
         private readonly ILogger<PriceCheckerService> _logger;
 
-        public PriceCheckerService(ApplicationDbContext db, IEnumerable<IPriceParser> parsers, ITelegramService telegram, ILogger<PriceCheckerService> logger)
+        public PriceCheckerService(
+            ApplicationDbContext db,
+            IEnumerable<IPriceParser> parsers,
+            ITelegramService telegram,
+            ILogger<PriceCheckerService> logger)
         {
             _db = db;
             _parsers = parsers.ToArray();
@@ -96,6 +100,8 @@ namespace PriceSaver.Server.Services
         public async Task CheckAllAsync(CancellationToken ct = default)
         {
             var subs = await _db.Subscriptions.Where(s => s.IsActive).ToListAsync(ct);
+
+            _logger.LogInformation("Price check cycle started. Total active subscriptions: {Count}", subs.Count);
 
             // Scenario 1: when a user receives price changes, send separate message per market.
             // Additionally, each message may contain not more than 1 table, and each table not more than 10 rows.
@@ -149,6 +155,16 @@ namespace PriceSaver.Server.Services
 
                         if (shouldNotify)
                         {
+                            if (price < old)
+                            {
+                                _logger.LogInformation(
+                                    "Price drop detected for SubscriptionId: {Id}. OldPrice: {Old} UAH → NewPrice: {New} UAH. Notifying UserId: {UserId}",
+                                    sub.Id,
+                                    old,
+                                    price,
+                                    sub.UserId);
+                            }
+
                             var key = (sub.UserId, sub.StoreType);
                             if (!changesByUserAndMarket.TryGetValue(key, out var list))
                             {

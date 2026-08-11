@@ -192,3 +192,7 @@ pricesaver.client/.vscode
 PriceSaver.Server/appsettings.Development.json
 PriceSaver.Server/appsettings.Production.json
 PriceSaver.Server/Properties/PublishProfiles
+
+# Application log files
+logs/
+logs/*.txt

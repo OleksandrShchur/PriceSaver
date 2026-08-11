@@ -2,6 +2,7 @@
 using PriceSaver.Server.Extensions;
 using PriceSaver.Server.Models;
 using PriceSaver.Server.Options;
+using PriceSaver.Server.Parsers;
 using PriceSaver.Server.Services;
 using Microsoft.Extensions.Options;
 using Telegram.Bot.Types.ReplyMarkups;
@@ -29,23 +30,45 @@ namespace PriceSaver.Server.Handlers
 
         public async Task SendSubscriptionsAsync(long chatId, CancellationToken cancellationToken)
         {
-            var subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(chatId, cancellationToken);
+            _logger.LogDebug(
+                "Received /{Command} from UserId: {UserId} (@{Username})",
+                "my_subscriptions",
+                chatId,
+                (string?)null);
 
-            if (subscriptions.Count == 0)
+            try
             {
+                var subscriptions = await _subscriptionService.GetActiveSubscriptionsAsync(chatId, cancellationToken);
+
+                if (subscriptions.Count == 0)
+                {
+                    await _telegram.SendMessageAsync(
+                        chatId,
+                        "⚠️ <b>У Вас немає активних підписок.</b>",
+                        cancellationToken);
+                    return;
+                }
+
+                foreach (var subscription in subscriptions)
+                {
+                    await _telegram.SendMessageWithKeyboardAsync(
+                        chatId,
+                        BuildSubscriptionMessage(subscription),
+                        BuildSubscriptionKeyboard(subscription),
+                        cancellationToken);
+                }
+
+                _logger.LogInformation(
+                    "Sent subscription list to UserId: {UserId}. Count: {Count}",
+                    chatId,
+                    subscriptions.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled error in /{Command} handler for UserId: {UserId}", "my_subscriptions", chatId);
                 await _telegram.SendMessageAsync(
                     chatId,
-                    "⚠️ <b>У Вас немає активних підписок.</b>",
-                    cancellationToken);
-                return;
-            }
-
-            foreach (var subscription in subscriptions)
-            {
-                await _telegram.SendMessageWithKeyboardAsync(
-                    chatId,
-                    BuildSubscriptionMessage(subscription),
-                    BuildSubscriptionKeyboard(subscription),
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
                     cancellationToken);
             }
         }
@@ -56,6 +79,11 @@ namespace PriceSaver.Server.Handlers
             {
                 if (!Guid.TryParse(subscriptionId, out var subscriptionGuid))
                 {
+                    _logger.LogWarning(
+                        "Failed to parse callback data '{CallbackData}' for UserId: {UserId}",
+                        subscriptionId,
+                        chatId);
+
                     await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Некоректний Id підписки.", true, cancellationToken);
                     return;
                 }
@@ -78,8 +106,12 @@ namespace PriceSaver.Server.Handlers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to handle remove subscription callback for chat {ChatId} and subscription {SubscriptionId}", chatId, subscriptionId);
-                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Помилка при видаленні підписки.", true, cancellationToken);
+                _logger.LogError(ex, "Unhandled error in /{Command} handler for UserId: {UserId}", "sub_remove", chatId);
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQueryId,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    true,
+                    cancellationToken);
             }
         }
 
@@ -89,6 +121,11 @@ namespace PriceSaver.Server.Handlers
             {
                 if (!Guid.TryParse(subscriptionId, out var subscriptionGuid))
                 {
+                    _logger.LogWarning(
+                        "Failed to parse callback data '{CallbackData}' for UserId: {UserId}",
+                        subscriptionId,
+                        chatId);
+
                     await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Некоректний Id підписки.", true, cancellationToken);
                     return;
                 }
@@ -119,27 +156,56 @@ namespace PriceSaver.Server.Handlers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to handle notify-on-increase callback for chat {ChatId} and subscription {SubscriptionId}", chatId, subscriptionId);
-                await _telegram.AnswerCallbackQueryAsync(callbackQueryId, "Помилка при зміні налаштування.", true, cancellationToken);
+                _logger.LogError(ex, "Unhandled error in /{Command} handler for UserId: {UserId}", "sub_toggle_increase", chatId);
+                await _telegram.AnswerCallbackQueryAsync(
+                    callbackQueryId,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    true,
+                    cancellationToken);
             }
         }
 
         public async Task CreateSubscriptionAsync(long chatId, string? username, string url, CancellationToken cancellationToken)
         {
-            var result = await _subscriptionService.CreateSubscriptionAsync(chatId, username, url, cancellationToken);
+            _logger.LogDebug(
+                "Received /{Command} from UserId: {UserId} (@{Username})",
+                "subscribe",
+                chatId,
+                username);
 
-            var message = result.Status switch
+            try
             {
-                CreateSubscriptionStatus.AlreadyActive => BuildAlreadyActiveMessage(result.Subscription!),
-                CreateSubscriptionStatus.UnsupportedStore => "❌ <b>Вказаний магазин ще не підтримується нами.</b>",
-                CreateSubscriptionStatus.LimitReached => $"🚫 <b>Досягнуто ліміту підписок!</b>\nМаксимально дозволено: <code>{_options.MaxSubscriptionsPerUser}</code>.",
-                CreateSubscriptionStatus.ParseFailed => "❌ <b>Неможливо отримати інформацію про продукт за посиланням.</b>\nБудь ласка, перевірте правильність посилання.",
-                CreateSubscriptionStatus.Created or
-                CreateSubscriptionStatus.Reactivated => BuildConfirmationMessage(result.Subscription!),
-                _ => "❌ <b>Сталася невідома помилка.</b>"
-            };
+                var result = await _subscriptionService.CreateSubscriptionAsync(chatId, username, url, cancellationToken);
 
-            await _telegram.SendMessageAsync(chatId, message, cancellationToken);
+                var message = result.Status switch
+                {
+                    CreateSubscriptionStatus.AlreadyActive => BuildAlreadyActiveMessage(result.Subscription!),
+                    CreateSubscriptionStatus.UnsupportedStore => "❌ <b>Вказаний магазин ще не підтримується нами.</b>",
+                    CreateSubscriptionStatus.LimitReached => $"🚫 <b>Досягнуто ліміту підписок!</b>\nМаксимально дозволено: <code>{_options.MaxSubscriptionsPerUser}</code>.",
+                    CreateSubscriptionStatus.ParseFailed => "⚠️ Не вдалося отримати ціну для вказаного товару. Перевірте посилання та спробуйте ще раз.",
+                    CreateSubscriptionStatus.Created or
+                    CreateSubscriptionStatus.Reactivated => BuildConfirmationMessage(result.Subscription!),
+                    _ => "❌ <b>Сталася невідома помилка.</b>"
+                };
+
+                await _telegram.SendMessageAsync(chatId, message, cancellationToken);
+            }
+            catch (PriceParseException ex)
+            {
+                _logger.LogWarning(ex, "Price parse validation error for UserId: {UserId}, Url: {Url}", chatId, url);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    "⚠️ Не вдалося отримати ціну для вказаного товару. Перевірте посилання та спробуйте ще раз.",
+                    cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled error in /{Command} handler for UserId: {UserId}", "subscribe", chatId);
+                await _telegram.SendMessageAsync(
+                    chatId,
+                    "❌ Сталася непередбачена помилка. Спробуйте пізніше або зверніться до підтримки.",
+                    cancellationToken);
+            }
         }
 
         private static string BuildAlreadyActiveMessage(Subscription subscription)
