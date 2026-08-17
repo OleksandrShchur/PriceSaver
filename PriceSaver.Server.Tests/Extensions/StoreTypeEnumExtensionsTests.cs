@@ -9,6 +9,7 @@ namespace PriceSaver.Server.Tests.Extensions
         [InlineData(StoreType.ATB, "АТБ")]
         [InlineData(StoreType.Silpo, "Сільпо")]
         [InlineData(StoreType.Maudau, "Maudau")]
+        [InlineData(StoreType.Metro, "METRO")]
         [InlineData(StoreType.Unknown, "Невідомий")]
         public void GetDescription_ReturnsLocalizedDescription(StoreType value, string expected)
         {
