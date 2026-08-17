@@ -1,0 +1,26 @@
+---
+description: PriceSaver project context for every chat — architecture pointer and add-store skill
+alwaysApply: true
+---
+
+# PriceSaver
+
+Telegram price-tracking bot: `PriceSaver.Server` (ASP.NET Core, .NET 9) + `pricesaver.client` (React/TS). Users subscribe to product URLs; parsers re-check prices; Telegram notifies on change.
+
+Read `AGENTS.md` at the repo root for layout, stack, and conventions.
+
+## Adding a store
+
+When the task is a new retailer, shop, parser, or scraper, follow `.cursor/skills/add-store/SKILL.md` before editing. Required together: `StoreType` enum, `IPriceParser`, `Program.cs` `AddHttpClient<IPriceParser, T>`, `SubscriptionService.InferStoreType`, and tests. `parser.StoreType` alone is not persisted.
+
+## Do
+
+- Match existing parser/DI/test patterns (ATB, Silpo, Maudau).
+- Keep Telegram user-facing strings in Ukrainian.
+- Use offline `StubHttpMessageHandler` tests; never hit live shops.
+
+## Don't
+
+- Hardcode Telegram tokens or job API keys.
+- Add a parser without the enum + `InferStoreType` case.
+- Refactor `InferStoreType` or unrelated files in the same change unless asked.
