@@ -102,6 +102,29 @@ try
         AutomaticDecompression = DecompressionMethods.All
     });
 
+    builder.Services.AddHttpClient<IPriceParser, MetroPriceParser>(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(15);
+
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/125.0.0.0 Safari/537.36");
+
+        client.DefaultRequestHeaders.Accept.ParseAdd(
+            "application/json, text/plain, */*");
+
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd(
+            "uk-UA,uk;q=0.9");
+
+        client.DefaultRequestHeaders.Add("Origin", "https://shop.metro.ua");
+        client.DefaultRequestHeaders.Add("Referer", "https://shop.metro.ua/");
+    })
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AutomaticDecompression = DecompressionMethods.All
+    });
+
     builder.Services.AddSingleton<ITelegramService, TelegramService>();
     builder.Services.AddSingleton<ITelegramAlertService, TelegramAlertService>();
 

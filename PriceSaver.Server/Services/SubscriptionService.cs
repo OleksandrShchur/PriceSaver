@@ -164,6 +164,7 @@ namespace PriceSaver.Server.Services
             "atb" => StoreType.ATB,
             "silpo" => StoreType.Silpo,
             "maudau" => StoreType.Maudau,
+            "metro" => StoreType.Metro,
             _ => StoreType.Unknown
         };
     }
