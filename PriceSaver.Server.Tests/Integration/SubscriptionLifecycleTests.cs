@@ -58,6 +58,11 @@ namespace PriceSaver.Server.Tests.Integration
         public async Task FullLifecycle_Create_List_Remove()
         {
             var client = _factory.CreateClient();
+            while (_factory.Telegram.Messages.TryDequeue(out _)) { }
+            while (_factory.Telegram.RichMessages.TryDequeue(out _)) { }
+            while (_factory.Telegram.InlineButtons.TryDequeue(out _)) { }
+            while (_factory.Telegram.EditedRichMessages.TryDequeue(out _)) { }
+            while (_factory.Telegram.CallbackAnswers.TryDequeue(out _)) { }
 
             // 1. Create a subscription by sending a product URL.
             var createResponse = await client.PostAsync(
@@ -79,19 +84,28 @@ namespace PriceSaver.Server.Tests.Integration
 
             _factory.Telegram.Messages.Should().Contain(m => m.Text.Contains("Підписку створено"));
 
-            // 2. List subscriptions -> an inline delete button is sent.
+            // 2. List subscriptions -> one rich table with a select button for the item.
             var listResponse = await client.PostAsync(
                 "/api/telegram",
                 Json(MessageUpdate(2, 11, "/my_subscriptions")));
             listResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
+            _factory.Telegram.RichMessages.Should().ContainSingle(m => m.ChatId == ChatId);
             _factory.Telegram.InlineButtons.Should()
-                .Contain(b => b.CallbackData == $"sub_remove_{subscriptionId}");
+                .Contain(b => b.CallbackData == $"sub_sel_0_{subscriptionId}");
 
-            // 3. Remove the subscription via the inline button callback.
+            // 3. Open detail, then remove the subscription via the detail delete button.
+            var selectResponse = await client.PostAsync(
+                "/api/telegram",
+                Json(CallbackUpdate(3, 12, $"sub_sel_0_{subscriptionId}")));
+            selectResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            _factory.Telegram.EditedRichMessages.Should()
+                .Contain(m => m.MessageId == 12 && m.Markdown.Contains("Integration Product"));
+
             var removeResponse = await client.PostAsync(
                 "/api/telegram",
-                Json(CallbackUpdate(3, 12, $"sub_remove_{subscriptionId}")));
+                Json(CallbackUpdate(4, 12, $"sub_remove_0_{subscriptionId}")));
             removeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using (var scope = _factory.Services.CreateScope())
@@ -100,12 +114,12 @@ namespace PriceSaver.Server.Tests.Integration
                 db.Subscriptions.Single(s => s.Id == subscriptionId).IsActive.Should().BeFalse();
             }
 
-            _factory.Telegram.CallbackAnswers.Should().Contain(a => a.Text!.Contains("видалено"));
+            _factory.Telegram.CallbackAnswers.Should().Contain(a => a.Text != null && a.Text.Contains("видалено"));
 
             // 4. Re-add the same product -> reactivate the existing row instead of inserting a new one.
             var recreateResponse = await client.PostAsync(
                 "/api/telegram",
-                Json(MessageUpdate(4, 13, "https://example.com/product/9")));
+                Json(MessageUpdate(5, 13, "https://example.com/product/9")));
             recreateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
 
             using (var scope = _factory.Services.CreateScope())

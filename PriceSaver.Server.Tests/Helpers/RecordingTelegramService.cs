@@ -11,8 +11,9 @@ namespace PriceSaver.Server.Tests.Helpers
     public sealed class RecordingTelegramService : ITelegramService
     {
         public record SentMessage(long ChatId, string Text);
-        public record RichMessage(long ChatId, string Markdown);
+        public record RichMessage(long ChatId, string Markdown, IReplyMarkup? ReplyMarkup);
         public record EditedMessage(long ChatId, int MessageId, string Text);
+        public record EditedRichMessage(long ChatId, int MessageId, string Markdown, InlineKeyboardMarkup? ReplyMarkup);
         public record InlineButton(long ChatId, string Text, string ButtonLabel, string CallbackData);
         public record DeletedMessage(long ChatId, int MessageId);
         public record CallbackAnswer(string CallbackQueryId, string? Text, bool ShowAlert);
@@ -20,10 +21,16 @@ namespace PriceSaver.Server.Tests.Helpers
         public ConcurrentQueue<SentMessage> Messages { get; } = new();
         public ConcurrentQueue<RichMessage> RichMessages { get; } = new();
         public ConcurrentQueue<EditedMessage> EditedMessages { get; } = new();
+        public ConcurrentQueue<EditedRichMessage> EditedRichMessages { get; } = new();
         public ConcurrentQueue<SentMessage> KeyboardMessages { get; } = new();
         public ConcurrentQueue<InlineButton> InlineButtons { get; } = new();
         public ConcurrentQueue<DeletedMessage> DeletedMessages { get; } = new();
         public ConcurrentQueue<CallbackAnswer> CallbackAnswers { get; } = new();
+
+        /// <summary>
+        /// When <c>false</c>, <see cref="SendRichMessageAsync"/> reports failure (for upgrade-fallback tests).
+        /// </summary>
+        public bool RichSendSucceeds { get; set; } = true;
 
         public Task SendMessageAsync(long chatId, string text, CancellationToken cancellationToken = default)
         {
@@ -31,10 +38,29 @@ namespace PriceSaver.Server.Tests.Helpers
             return Task.CompletedTask;
         }
 
-        public Task SendRichMessageAsync(long chatId, string markdown, CancellationToken cancellationToken = default)
+        public Task<bool> SendRichMessageAsync(
+            long chatId,
+            string markdown,
+            IReplyMarkup? replyMarkup = null,
+            CancellationToken cancellationToken = default)
         {
-            RichMessages.Enqueue(new RichMessage(chatId, markdown));
-            return Task.CompletedTask;
+            RichMessages.Enqueue(new RichMessage(chatId, markdown, replyMarkup));
+
+            if (replyMarkup is InlineKeyboardMarkup inlineKeyboard)
+            {
+                foreach (var row in inlineKeyboard.InlineKeyboard)
+                {
+                    foreach (var button in row)
+                    {
+                        if (!string.IsNullOrWhiteSpace(button.CallbackData))
+                        {
+                            InlineButtons.Enqueue(new InlineButton(chatId, markdown, button.Text, button.CallbackData));
+                        }
+                    }
+                }
+            }
+
+            return Task.FromResult(RichSendSucceeds);
         }
 
         public Task SendMessageWithKeyboardAsync(long chatId, string text, IReplyMarkup replyMarkup, CancellationToken cancellationToken = default)
@@ -76,6 +102,32 @@ namespace PriceSaver.Server.Tests.Helpers
         {
             EditedMessages.Enqueue(new EditedMessage(chatId, messageId, text));
             return Task.CompletedTask;
+        }
+
+        public Task<bool> EditRichMessageAsync(
+            long chatId,
+            int messageId,
+            string markdown,
+            InlineKeyboardMarkup? replyMarkup = null,
+            CancellationToken cancellationToken = default)
+        {
+            EditedRichMessages.Enqueue(new EditedRichMessage(chatId, messageId, markdown, replyMarkup));
+
+            if (replyMarkup is not null)
+            {
+                foreach (var row in replyMarkup.InlineKeyboard)
+                {
+                    foreach (var button in row)
+                    {
+                        if (!string.IsNullOrWhiteSpace(button.CallbackData))
+                        {
+                            InlineButtons.Enqueue(new InlineButton(chatId, markdown, button.Text, button.CallbackData));
+                        }
+                    }
+                }
+            }
+
+            return Task.FromResult(true);
         }
 
         public Task AnswerCallbackQueryAsync(string callbackQueryId, string? text = null, bool showAlert = false, CancellationToken cancellationToken = default)

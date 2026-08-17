@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Options;
@@ -12,6 +13,11 @@ namespace PriceSaver.Server.Services
     public class TelegramService : ITelegramService
     {
         private static readonly HttpClient HttpClient = new();
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+        };
+
         private readonly TelegramOptions _options;
         private readonly ILogger<TelegramService> _logger;
         private readonly Lazy<ITelegramBotClient?> _client;
@@ -30,7 +36,7 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
-                
+
                 return;
             }
 
@@ -42,12 +48,16 @@ namespace PriceSaver.Server.Services
                 cancellationToken: cancellationToken);
         }
 
-        public async Task SendRichMessageAsync(long chatId, string markdown, CancellationToken cancellationToken = default)
+        public async Task<bool> SendRichMessageAsync(
+            long chatId,
+            string markdown,
+            IReplyMarkup? replyMarkup = null,
+            CancellationToken cancellationToken = default)
         {
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; rich message to chat {ChatId} was skipped.", chatId);
-                return;
+                return false;
             }
 
             // Telegram Rich Messages (Bot API 10.1+) are not covered by our current typed wrapper,
@@ -61,39 +71,11 @@ namespace PriceSaver.Server.Services
                 ["rich_message"] = new Dictionary<string, object?>
                 {
                     ["markdown"] = markdown
-                }
+                },
+                ["reply_markup"] = ToReplyMarkupPayload(replyMarkup)
             };
 
-            try
-            {
-                var content = new StringContent(
-                    JsonSerializer.Serialize(payload),
-                    System.Text.Encoding.UTF8,
-                    "application/json");
-
-                using var response = await HttpClient.PostAsync(url, content, cancellationToken);
-                var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("sendRichMessage failed for chat {ChatId}. HTTP {StatusCode}. Body: {Body}",
-                        chatId, response.StatusCode, responseText);
-                    return;
-                }
-
-                using var json = JsonDocument.Parse(responseText);
-                if (json.RootElement.TryGetProperty("ok", out var okProp) && okProp.GetBoolean())
-                {
-                    return;
-                }
-
-                var description = json.RootElement.TryGetProperty("description", out var d) ? d.GetString() : null;
-                _logger.LogWarning("sendRichMessage returned ok=false for chat {ChatId}. Description: {Description}", chatId, description);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to send rich message to chat {ChatId}.", chatId);
-            }
+            return await PostRichApiAsync(url, payload, chatId, "sendRichMessage", cancellationToken);
         }
 
         public async Task SendMessageWithKeyboardAsync(long chatId, string text, IReplyMarkup replyMarkup, CancellationToken cancellationToken = default)
@@ -101,7 +83,7 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
-                
+
                 return;
             }
 
@@ -119,7 +101,7 @@ namespace PriceSaver.Server.Services
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message to chat {ChatId} was skipped.", chatId);
-                
+
                 return;
             }
 
@@ -154,12 +136,41 @@ namespace PriceSaver.Server.Services
                 cancellationToken: cancellationToken);
         }
 
+        public async Task<bool> EditRichMessageAsync(
+            long chatId,
+            int messageId,
+            string markdown,
+            InlineKeyboardMarkup? replyMarkup = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (Client is null)
+            {
+                _logger.LogWarning("Telegram bot token is not configured; rich message edit for chat {ChatId} was skipped.", chatId);
+                return false;
+            }
+
+            var url = $"https://api.telegram.org/bot{_options.BotToken}/editMessageText";
+
+            var payload = new Dictionary<string, object?>
+            {
+                ["chat_id"] = chatId,
+                ["message_id"] = messageId,
+                ["rich_message"] = new Dictionary<string, object?>
+                {
+                    ["markdown"] = markdown
+                },
+                ["reply_markup"] = ToReplyMarkupPayload(replyMarkup)
+            };
+
+            return await PostRichApiAsync(url, payload, chatId, "editMessageText(rich_message)", cancellationToken);
+        }
+
         public async Task DeleteMessageAsync(long chatId, int messageId, CancellationToken cancellationToken = default)
         {
             if (Client is null)
             {
                 _logger.LogWarning("Telegram bot token is not configured; message deletion for chat {ChatId} was skipped.", chatId);
-                
+
                 return;
             }
 
@@ -183,6 +194,89 @@ namespace PriceSaver.Server.Services
             }
 
             await Client.AnswerCallbackQueryAsync(callbackQueryId, text, showAlert, cancellationToken: cancellationToken);
+        }
+
+        private async Task<bool> PostRichApiAsync(
+            string url,
+            Dictionary<string, object?> payload,
+            long chatId,
+            string operation,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var content = new StringContent(
+                    JsonSerializer.Serialize(payload, JsonOptions),
+                    System.Text.Encoding.UTF8,
+                    "application/json");
+
+                using var response = await HttpClient.PostAsync(url, content, cancellationToken);
+                var responseText = await response.Content.ReadAsStringAsync(cancellationToken);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("{Operation} failed for chat {ChatId}. HTTP {StatusCode}. Body: {Body}",
+                        operation, chatId, response.StatusCode, responseText);
+                    return false;
+                }
+
+                using var json = JsonDocument.Parse(responseText);
+                if (json.RootElement.TryGetProperty("ok", out var okProp) && okProp.GetBoolean())
+                {
+                    return true;
+                }
+
+                var description = json.RootElement.TryGetProperty("description", out var d) ? d.GetString() : null;
+                _logger.LogWarning("{Operation} returned ok=false for chat {ChatId}. Description: {Description}",
+                    operation, chatId, description);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed {Operation} for chat {ChatId}.", operation, chatId);
+                return false;
+            }
+        }
+
+        private static object? ToReplyMarkupPayload(IReplyMarkup? replyMarkup)
+        {
+            if (replyMarkup is null)
+            {
+                return null;
+            }
+
+            if (replyMarkup is not InlineKeyboardMarkup inlineKeyboard)
+            {
+                // Rich listing/detail only needs inline keyboards; other markups are unused here.
+                return null;
+            }
+
+            var rows = inlineKeyboard.InlineKeyboard
+                .Select(row => row.Select(button =>
+                {
+                    var cell = new Dictionary<string, object?>
+                    {
+                        ["text"] = button.Text
+                    };
+
+                    if (!string.IsNullOrEmpty(button.CallbackData))
+                    {
+                        cell["callback_data"] = button.CallbackData;
+                    }
+
+                    if (!string.IsNullOrEmpty(button.Url))
+                    {
+                        cell["url"] = button.Url;
+                    }
+
+                    return cell;
+                }).ToArray())
+                .ToArray();
+
+            return new Dictionary<string, object?>
+            {
+                ["inline_keyboard"] = rows
+            };
         }
 
         private ITelegramBotClient? CreateClient()
