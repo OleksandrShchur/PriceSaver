@@ -13,6 +13,9 @@ namespace PriceSaver.Server.Models
         [Description("Maudau")]
         Maudau,
 
+        [Description("METRO")]
+        Metro,
+
         [Description("Невідомий")]
         Unknown
     }

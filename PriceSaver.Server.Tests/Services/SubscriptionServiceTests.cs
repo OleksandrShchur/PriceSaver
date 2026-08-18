@@ -194,6 +194,7 @@ namespace PriceSaver.Server.Tests.Services
         [InlineData("atb", StoreType.ATB)]
         [InlineData("silpo", StoreType.Silpo)]
         [InlineData("maudau", StoreType.Maudau)]
+        [InlineData("metro", StoreType.Metro)]
         [InlineData("unknownstore", StoreType.Unknown)]
         public async Task CreateSubscriptionAsync_InfersStoreType_FromParserStoreKey(string storeKey, StoreType expected)
         {
