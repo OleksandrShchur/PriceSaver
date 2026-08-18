@@ -67,12 +67,13 @@ namespace PriceSaver.Server.Tests.Controllers
             result.Should().BeOfType<OkObjectResult>();
             alerts.SentLogFiles.Should().ContainSingle()
                 .Which.FilePath.Should().Be(filePath);
+            File.Exists(filePath).Should().BeFalse();
         }
 
         [Fact]
         public async Task GetYesterdayLogs_Returns500_WhenSendFails()
         {
-            CreateLogFile(DateTime.Today.AddDays(-1), "yesterday");
+            var filePath = CreateLogFile(DateTime.Today.AddDays(-1), "yesterday");
             var controller = CreateController(Secret, out var alerts);
             alerts.SendLogFileResult = false;
 
@@ -80,6 +81,7 @@ namespace PriceSaver.Server.Tests.Controllers
 
             result.Should().BeOfType<ObjectResult>()
                 .Which.StatusCode.Should().Be(500);
+            File.Exists(filePath).Should().BeTrue();
         }
 
         [Fact]
@@ -111,7 +113,7 @@ namespace PriceSaver.Server.Tests.Controllers
             var yesterday = DateTime.Today.AddDays(-1);
             var olderPath = CreateLogFile(older, "older");
             var yesterdayPath = CreateLogFile(yesterday, "yesterday");
-            CreateLogFile(DateTime.Today, "today");
+            var todayPath = CreateLogFile(DateTime.Today, "today");
             var controller = CreateController(Secret, out var alerts);
 
             var result = await controller.SendBacklogLogs();
@@ -120,13 +122,16 @@ namespace PriceSaver.Server.Tests.Controllers
             alerts.SentLogFiles.Select(s => s.FilePath).Should().Equal(olderPath, yesterdayPath);
             alerts.SentLogFiles[0].Caption.Should().Contain(older.ToString("dd.MM.yyyy"));
             alerts.SentLogFiles[1].Caption.Should().Contain(yesterday.ToString("dd.MM.yyyy"));
+            File.Exists(olderPath).Should().BeFalse();
+            File.Exists(yesterdayPath).Should().BeFalse();
+            File.Exists(todayPath).Should().BeTrue();
         }
 
         [Fact]
         public async Task SendBacklogLogs_Returns500_WhenAnySendFails()
         {
-            CreateLogFile(DateTime.Today.AddDays(-2), "older");
-            CreateLogFile(DateTime.Today.AddDays(-1), "yesterday");
+            var olderPath = CreateLogFile(DateTime.Today.AddDays(-2), "older");
+            var yesterdayPath = CreateLogFile(DateTime.Today.AddDays(-1), "yesterday");
             var controller = CreateController(Secret, out var alerts);
             alerts.SendLogFileResult = false;
 
@@ -134,6 +139,24 @@ namespace PriceSaver.Server.Tests.Controllers
 
             result.Should().BeOfType<ObjectResult>()
                 .Which.StatusCode.Should().Be(500);
+            File.Exists(olderPath).Should().BeTrue();
+            File.Exists(yesterdayPath).Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task SendBacklogLogs_DeletesOnlySuccessfullySentFiles()
+        {
+            var olderPath = CreateLogFile(DateTime.Today.AddDays(-2), "older");
+            var yesterdayPath = CreateLogFile(DateTime.Today.AddDays(-1), "yesterday");
+            var controller = CreateController(Secret, out var alerts);
+            alerts.SendLogFilePredicate = path => path == olderPath;
+
+            var result = await controller.SendBacklogLogs();
+
+            result.Should().BeOfType<ObjectResult>()
+                .Which.StatusCode.Should().Be(500);
+            File.Exists(olderPath).Should().BeFalse();
+            File.Exists(yesterdayPath).Should().BeTrue();
         }
 
         private string CreateLogFile(DateTime date, string contents)
