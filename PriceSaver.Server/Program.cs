@@ -26,6 +26,7 @@ try
             path: builder.Configuration["Logging:FilePath"] ?? "logs/pricesaver-.txt",
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: 30,
+            shared: true,
             restrictedToMinimumLevel: LogEventLevel.Debug,
             outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u5}] [{ThreadId}] {SourceContext} | {Message:lj}{NewLine}{Exception}")
         .MinimumLevel.Debug()

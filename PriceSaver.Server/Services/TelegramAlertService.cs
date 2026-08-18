@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using PriceSaver.Server.Helpers;
 using PriceSaver.Server.Options;
 using Telegram.Bot;
 using Telegram.Bot.Types.Enums;
@@ -55,19 +56,19 @@ namespace PriceSaver.Server.Services
             }
         }
 
-        public async Task SendLogFileAsync(string filePath, string caption)
+        public async Task<bool> SendLogFileAsync(string filePath, string caption)
         {
             var client = _client.Value;
             var channelId = _configuration["TelegramAlerts:ChannelId"];
             if (client is null || string.IsNullOrWhiteSpace(channelId))
             {
                 _logger.LogError("Telegram log upload skipped: TelegramAlerts:ChannelId is not configured");
-                return;
+                return false;
             }
 
             try
             {
-                await using var stream = System.IO.File.OpenRead(filePath);
+                await using var stream = await LogFileReader.OpenSharedCopyAsync(filePath);
                 var inputFile = new InputOnlineFile(stream, Path.GetFileName(filePath));
 
                 await client.SendDocumentAsync(
@@ -75,10 +76,13 @@ namespace PriceSaver.Server.Services
                     document: inputFile,
                     caption: caption,
                     cancellationToken: CancellationToken.None);
+
+                return true;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to send log file {FilePath} to Telegram channel", filePath);
+                return false;
             }
         }
 
