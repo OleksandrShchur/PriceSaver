@@ -59,11 +59,14 @@ try
         options.UseSqlServer(
             builder.Configuration.GetConnectionString("DefaultConnection")));
 
-    // HTTP Clients for parsers
+    // HTTP Clients for parsers.
+    // Each parser must use AddPriceParserHttpClient<TParser> (named after the
+    // concrete type). AddHttpClient<IPriceParser, T> shares one client name
+    // and crashes when two parsers set single-value headers such as Referer.
 
-    builder.Services.AddHttpClient<IPriceParser, AtbPriceParser>();
+    builder.Services.AddPriceParserHttpClient<AtbPriceParser>();
 
-    builder.Services.AddHttpClient<IPriceParser, SilpoPriceParser>(client =>
+    builder.Services.AddPriceParserHttpClient<SilpoPriceParser>(client =>
     {
         client.Timeout = TimeSpan.FromSeconds(15);
 
@@ -86,7 +89,7 @@ try
         AutomaticDecompression = DecompressionMethods.All
     });
 
-    builder.Services.AddHttpClient<IPriceParser, MaudauPriceParser>(client =>
+    builder.Services.AddPriceParserHttpClient<MaudauPriceParser>(client =>
     {
         client.Timeout = TimeSpan.FromSeconds(15);
 
@@ -103,7 +106,7 @@ try
         AutomaticDecompression = DecompressionMethods.All
     });
 
-    builder.Services.AddHttpClient<IPriceParser, MetroPriceParser>(client =>
+    builder.Services.AddPriceParserHttpClient<MetroPriceParser>(client =>
     {
         client.Timeout = TimeSpan.FromSeconds(15);
 
