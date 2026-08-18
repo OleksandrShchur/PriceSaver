@@ -51,6 +51,8 @@ namespace PriceSaver.Server.Controllers
                 return StatusCode(500, new { error = "Failed to send log file to Telegram channel" });
             }
 
+            TryDeleteSentLogFile(fullPath);
+
             var ip = HttpContext.Connection.RemoteIpAddress;
             _logger.LogInformation(
                 "Yesterday's log file {FileName} successfully sent to Telegram channel by request from {IP}",
@@ -90,6 +92,7 @@ namespace PriceSaver.Server.Controllers
                 if (ok)
                 {
                     sent.Add(fileName);
+                    TryDeleteSentLogFile(path);
                 }
                 else
                 {
@@ -127,6 +130,21 @@ namespace PriceSaver.Server.Controllers
                 message = "Log files sent to Telegram channel",
                 sent
             });
+        }
+
+        private void TryDeleteSentLogFile(string path)
+        {
+            try
+            {
+                if (System.IO.File.Exists(path))
+                {
+                    System.IO.File.Delete(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to delete sent log file {FilePath}", path);
+            }
         }
 
         private bool IsAuthorized()
