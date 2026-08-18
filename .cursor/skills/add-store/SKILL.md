@@ -4,7 +4,7 @@ description: >-
   Adds a new retailer to PriceSaver by creating a StoreType value, IPriceParser,
   DI registration, StoreKey mapping, and tests. Use when adding a store, shop,
   retailer, price parser, scraper, or when the user says "add a parser for",
-  "support this site", or names a new market (ATB, Silpo, Maudau, or another).
+  "support this site", or names a new market (ATB, Silpo, Maudau, Metro, or another).
 ---
 
 # Add a store
@@ -20,6 +20,7 @@ Do not add frontend or database-migration work for a new store. `StoreType` is s
 | ATB | `atb` | `ATB` | `atbmarket.com`, `atbmarket.ua`, `atb.ua` | Jina Reader HTML + regex |
 | Silpo | `silpo` | `Silpo` | `silpo.ua` | Product JSON API |
 | Maudau | `maudau` | `Maudau` | `maudau.com.ua` | Product JSON API |
+| Metro | `metro` | `Metro` | `shop.metro.ua` | Product JSON API |
 
 `StoreType.Unknown` has no parser. Insert new enum members **before** `Unknown`.
 
@@ -30,7 +31,7 @@ Copy and track:
 ```
 - [ ] StoreType enum + [Description] (Ukrainian display name)
 - [ ] IPriceParser implementation
-- [ ] Program.cs AddHttpClient<IPriceParser, TParser>
+- [ ] Program.cs AddPriceParserHttpClient<TParser>
 - [ ] SubscriptionService.InferStoreType switch (required; parser.StoreType is not enough)
 - [ ] Parser unit tests (CanParse + ParseAsync success/failure)
 - [ ] StoreTypeEnumExtensionsTests InlineData
@@ -59,7 +60,7 @@ Create `PriceSaver.Server/Parsers/{Name}PriceParser.cs` implementing `IPricePars
 - Prefer a product JSON API (copy `SilpoPriceParser` / `MaudauPriceParser`).
 - If there is no API, scrape HTML. ATB uses Jina Reader (`https://r.jina.ai/{url}`). Jina returns HTTP 200 for upstream 404s — detect error markers in the body.
 
-**HTTP:** inject `HttpClient` and `ILogger<TParser>` (ATB/Silpo pattern). Register with `AddHttpClient<IPriceParser, TParser>`. If the API needs headers or gzip, configure the client like Silpo/Maudau (`Timeout` 15s, User-Agent, `AutomaticDecompression`).
+**HTTP:** inject `HttpClient` and `ILogger<TParser>` (ATB/Silpo pattern). Register with `AddPriceParserHttpClient<TParser>` (see DI below). If the API needs headers or gzip, configure the client like Silpo/Maudau (`Timeout` 15s, User-Agent, `AutomaticDecompression`).
 
 **Errors:** throw the public `PriceParseException` for expected failures (bad slug, 404, missing price). Do not nest a private `PriceParseException`. Parser exceptions are logged and mapped to `CreateSubscriptionStatus.ParseFailed`; they are not shown to Telegram users.
 
@@ -70,10 +71,19 @@ Create `PriceSaver.Server/Parsers/{Name}PriceParser.cs` implementing `IPricePars
 In `PriceSaver.Server/Program.cs`, next to the other parsers:
 
 ```csharp
-builder.Services.AddHttpClient<IPriceParser, {Name}PriceParser>(...);
+builder.Services.AddPriceParserHttpClient<{Name}PriceParser>(client =>
+{
+    // optional: Timeout, User-Agent, Origin, Referer
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    AutomaticDecompression = DecompressionMethods.All
+});
 ```
 
-Must be `AddHttpClient<IPriceParser, T>` so `IEnumerable<IPriceParser>` in `SubscriptionService` and `PriceCheckerService` picks it up. Resolution is `parsers.FirstOrDefault(p => p.CanParse(url))`.
+Must use `AddPriceParserHttpClient<TParser>` so each parser gets its own named HttpClient **and** `IEnumerable<IPriceParser>` in `SubscriptionService` / `PriceCheckerService` still picks it up. Resolution is `parsers.FirstOrDefault(p => p.CanParse(url))`.
+
+Do **not** use `AddHttpClient<IPriceParser, TParser>`. That names every client `"IPriceParser"`, so configure callbacks share one `HttpClient` and single-value headers such as `Referer` throw `FormatException` (this broke `POST /api/telegram` after Metro was added).
 
 ### 4. StoreKey mapping (easy to miss)
 
@@ -85,6 +95,7 @@ private static StoreType InferStoreType(string key) => key.ToLowerInvariant() sw
     "atb" => StoreType.ATB,
     "silpo" => StoreType.Silpo,
     "maudau" => StoreType.Maudau,
+    "metro" => StoreType.Metro,
     "newstore" => StoreType.NewStore, // add here
     _ => StoreType.Unknown
 };

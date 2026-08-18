@@ -11,11 +11,11 @@ Read `AGENTS.md` at the repo root for layout, stack, and conventions.
 
 ## Adding a store
 
-When the task is a new retailer, shop, parser, or scraper, follow `.cursor/skills/add-store/SKILL.md` before editing. Required together: `StoreType` enum, `IPriceParser`, `Program.cs` `AddHttpClient<IPriceParser, T>`, `SubscriptionService.InferStoreType`, and tests. `parser.StoreType` alone is not persisted.
+When the task is a new retailer, shop, parser, or scraper, follow `.cursor/skills/add-store/SKILL.md` before editing. Required together: `StoreType` enum, `IPriceParser`, `Program.cs` `AddPriceParserHttpClient<TParser>`, `SubscriptionService.InferStoreType`, and tests. `parser.StoreType` alone is not persisted. Do not register with `AddHttpClient<IPriceParser, T>`.
 
 ## Do
 
-- Match existing parser/DI/test patterns (ATB, Silpo, Maudau).
+- Match existing parser/DI/test patterns (ATB, Silpo, Maudau, Metro).
 - Keep Telegram user-facing strings in Ukrainian.
 - Use offline `StubHttpMessageHandler` tests; never hit live shops.
 
