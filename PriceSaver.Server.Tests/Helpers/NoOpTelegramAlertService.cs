@@ -7,7 +7,7 @@ namespace PriceSaver.Server.Tests.Helpers
         public Task SendErrorAlertAsync(string message, Exception? exception = null) =>
             Task.CompletedTask;
 
-        public Task SendLogFileAsync(string filePath, string caption) =>
-            Task.CompletedTask;
+        public Task<bool> SendLogFileAsync(string filePath, string caption) =>
+            Task.FromResult(true);
     }
 }
