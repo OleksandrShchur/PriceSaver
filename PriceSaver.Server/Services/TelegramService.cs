@@ -67,7 +67,6 @@ namespace PriceSaver.Server.Services
             var payload = new Dictionary<string, object?>
             {
                 ["chat_id"] = chatId,
-                ["disable_web_page_preview"] = true,
                 ["rich_message"] = new Dictionary<string, object?>
                 {
                     ["markdown"] = markdown
