@@ -28,10 +28,10 @@ namespace PriceSaver.Server.Services
         public async Task SendErrorAlertAsync(string message, Exception? exception = null)
         {
             var client = _client.Value;
-            var channelId = _configuration["TelegramAlerts:ChannelId"];
-            if (client is null || string.IsNullOrWhiteSpace(channelId))
+            var channelIdRaw = _configuration["TelegramAlerts:ChannelId"];
+            if (client is null || string.IsNullOrWhiteSpace(channelIdRaw) || !long.TryParse(channelIdRaw, out var channelId))
             {
-                _logger.LogError("Telegram alert skipped: TelegramAlerts:ChannelId is not configured");
+                _logger.LogError("Telegram alert skipped: TelegramAlerts:ChannelId is not configured or invalid");
                 return;
             }
 
@@ -59,10 +59,10 @@ namespace PriceSaver.Server.Services
         public async Task<bool> SendLogFileAsync(string filePath, string caption)
         {
             var client = _client.Value;
-            var channelId = _configuration["TelegramAlerts:ChannelId"];
-            if (client is null || string.IsNullOrWhiteSpace(channelId))
+            var channelIdRaw = _configuration["TelegramAlerts:ChannelId"];
+            if (client is null || string.IsNullOrWhiteSpace(channelIdRaw) || !long.TryParse(channelIdRaw, out var channelId))
             {
-                _logger.LogError("Telegram log upload skipped: TelegramAlerts:ChannelId is not configured");
+                _logger.LogError("Telegram log upload skipped: TelegramAlerts:ChannelId is not configured or invalid");
                 return false;
             }
 
