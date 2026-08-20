@@ -8,7 +8,8 @@ namespace PriceSaver.Server.Tests.Parsers
 {
     public class MetroPriceParserTests
     {
-        private const string FixtureJson = """
+        // Current Metro API shape: finalPrice under stores/{storeId}/possibleDeliveryModes/...
+        private const string NestedFixtureJson = """
             {
               "result": {
                 "BTY-X395449": {
@@ -17,8 +18,20 @@ namespace PriceSaver.Server.Tests.Parsers
                       "description": "METRO Chef Вершки ультрапастеризовані 20% 1л",
                       "bundles": {
                         "0021": {
-                          "sellingPriceInfo": {
-                            "finalPrice": 155.00
+                          "stores": {
+                            "00027": {
+                              "possibleDeliveryModes": {
+                                "STORE": {
+                                  "possibleFulfillmentTypes": {
+                                    "STORE": {
+                                      "sellingPriceInfo": {
+                                        "finalPrice": 155.00
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -57,9 +70,9 @@ namespace PriceSaver.Server.Tests.Parsers
         }
 
         [Fact]
-        public async Task ParseAsync_ReturnsDescriptionAndFinalPrice()
+        public async Task ParseAsync_ReturnsDescriptionAndFinalPrice_FromNestedStoresPath()
         {
-            var parser = CreateParser(FixtureJson, HttpStatusCode.OK, out var handler);
+            var parser = CreateParser(NestedFixtureJson, HttpStatusCode.OK, out var handler);
             const string url = "https://shop.metro.ua/shop/pv/BTY-X395449/0032/0021";
 
             var (name, price) = await parser.ParseAsync(url);
@@ -69,6 +82,51 @@ namespace PriceSaver.Server.Tests.Parsers
             handler.LastRequest.Should().NotBeNull();
             handler.LastRequest!.RequestUri!.ToString().Should().Contain("ids=BTY-X395449");
             handler.LastRequest.RequestUri.ToString().Should().Contain("storeIds=00027");
+            handler.LastRequest.RequestUri.ToString().Should().Contain("details=true");
+        }
+
+        [Fact]
+        public async Task ParseAsync_FallsBack_WhenBundleIdHasCorruptedSuffix()
+        {
+            var parser = CreateParser(NestedFixtureJson);
+
+            var (name, price) = await parser.ParseAsync(
+                "https://shop.metro.ua/shop/pv/BTY-X395449/0032/002121");
+
+            name.Should().Be("METRO Chef Вершки ультрапастеризовані 20% 1л");
+            price.Should().Be(155.00m);
+        }
+
+        [Fact]
+        public async Task ParseAsync_ReturnsFinalPrice_FromRootSellingPriceInfo_WhenPresent()
+        {
+            const string json = """
+            {
+              "result": {
+                "BTY-X395449": {
+                  "variants": {
+                    "0032": {
+                      "description": "METRO Chef Вершки ультрапастеризовані 20% 1л",
+                      "bundles": {
+                        "0021": {
+                          "sellingPriceInfo": {
+                            "finalPrice": 155.00
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+            """;
+            var parser = CreateParser(json);
+
+            var (name, price) = await parser.ParseAsync(
+                "https://shop.metro.ua/shop/pv/BTY-X395449/0032/0021");
+
+            name.Should().Be("METRO Chef Вершки ультрапастеризовані 20% 1л");
+            price.Should().Be(155.00m);
         }
 
         [Fact]
@@ -83,8 +141,20 @@ namespace PriceSaver.Server.Tests.Parsers
                       "description": "Ятрань Шинка Ювілейна",
                       "bundles": {
                         "0021": {
-                          "sellingPriceInfo": {
-                            "finalPrice": 199.90
+                          "stores": {
+                            "00027": {
+                              "possibleDeliveryModes": {
+                                "STORE": {
+                                  "possibleFulfillmentTypes": {
+                                    "STORE": {
+                                      "sellingPriceInfo": {
+                                        "finalPrice": 199.90
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -104,6 +174,7 @@ namespace PriceSaver.Server.Tests.Parsers
             price.Should().Be(199.90m);
             handler.LastRequest!.RequestUri!.ToString().Should().Contain("ids=BTY-X9528");
             handler.LastRequest.RequestUri.ToString().Should().Contain("storeIds=00027");
+            handler.LastRequest.RequestUri.ToString().Should().Contain("details=true");
         }
 
         [Fact]
@@ -139,7 +210,19 @@ namespace PriceSaver.Server.Tests.Parsers
                       "description": "METRO Chef Вершки ультрапастеризовані 20% 1л",
                       "bundles": {
                         "0021": {
-                          "sellingPriceInfo": {}
+                          "stores": {
+                            "00027": {
+                              "possibleDeliveryModes": {
+                                "STORE": {
+                                  "possibleFulfillmentTypes": {
+                                    "STORE": {
+                                      "sellingPriceInfo": {}
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
                         }
                       }
                     }

@@ -89,7 +89,7 @@ namespace PriceSaver.Server.Parsers
             CancellationToken ct)
         {
             var apiUrl =
-                $"{ApiBase}?ids={Uri.EscapeDataString(articleId)}&country=UA&locale=uk-UA&storeIds={StoreId}";
+                $"{ApiBase}?ids={Uri.EscapeDataString(articleId)}&country=UA&locale=uk-UA&storeIds={StoreId}&details=true";
 
             using var request = new HttpRequestMessage(HttpMethod.Get, apiUrl);
 
@@ -153,11 +153,8 @@ namespace PriceSaver.Server.Parsers
             }
 
             if (!variantEl.TryGetProperty("bundles", out var bundles)
-                || !TryGetPropertyIgnoreCase(bundles, bundle, out var bundleEl)
-                || !bundleEl.TryGetProperty("sellingPriceInfo", out var priceInfo)
-                || !priceInfo.TryGetProperty("finalPrice", out var finalPriceProp)
-                || !finalPriceProp.TryGetDecimal(out var price)
-                || price <= 0)
+                || !TryResolveBundle(bundles, bundle, out var bundleEl, out var resolvedBundle)
+                || !TryGetFinalPrice(bundleEl, out var price))
             {
                 _logger.LogWarning(
                     "Price element not found in response from {Source} for URL: {Url}.",
@@ -168,7 +165,130 @@ namespace PriceSaver.Server.Parsers
                     $"Metro API: could not extract a valid finalPrice from response for {url}.");
             }
 
+            if (!string.Equals(bundle, resolvedBundle, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogDebug(
+                    "Metro bundle '{Requested}' not found; using prefix match '{Resolved}' for {Url}.",
+                    bundle,
+                    resolvedBundle,
+                    url);
+            }
+
             return (name, price);
+        }
+
+        private static bool TryResolveBundle(
+            JsonElement bundles,
+            string requestedBundle,
+            out JsonElement bundleEl,
+            out string resolvedBundle)
+        {
+            if (TryGetPropertyIgnoreCase(bundles, requestedBundle, out bundleEl))
+            {
+                resolvedBundle = requestedBundle;
+                return true;
+            }
+
+            if (bundles.ValueKind != JsonValueKind.Object)
+            {
+                bundleEl = default;
+                resolvedBundle = requestedBundle;
+                return false;
+            }
+
+            // Metro URLs sometimes arrive with a corrupted trailing suffix (e.g. 002121 or 002121:49).
+            // Fall back to the longest available bundle key that is a prefix of the requested id.
+            var fallbackKey = bundles.EnumerateObject()
+                .Select(p => p.Name)
+                .Where(k => requestedBundle.StartsWith(k, StringComparison.OrdinalIgnoreCase))
+                .OrderByDescending(k => k.Length)
+                .FirstOrDefault();
+
+            if (fallbackKey is not null
+                && TryGetPropertyIgnoreCase(bundles, fallbackKey, out bundleEl))
+            {
+                resolvedBundle = fallbackKey;
+                return true;
+            }
+
+            bundleEl = default;
+            resolvedBundle = requestedBundle;
+            return false;
+        }
+
+        private static bool TryGetFinalPrice(JsonElement bundleEl, out decimal price)
+        {
+            // Legacy / alternate shape: price directly on the bundle.
+            if (TryGetFinalPriceFromSellingPriceInfo(bundleEl, out price))
+                return true;
+
+            // Current Metro API: price under stores/{storeId}/possibleDeliveryModes/...
+            if (!TryGetPropertyIgnoreCase(bundleEl, "stores", out var stores)
+                || !TryGetPropertyIgnoreCase(stores, StoreId, out var store)
+                || !TryGetPropertyIgnoreCase(store, "possibleDeliveryModes", out var deliveryModes)
+                || deliveryModes.ValueKind != JsonValueKind.Object)
+            {
+                price = default;
+                return false;
+            }
+
+            if (TryGetPropertyIgnoreCase(deliveryModes, "STORE", out var storeMode)
+                && TryGetFinalPriceFromDeliveryMode(storeMode, out price))
+            {
+                return true;
+            }
+
+            foreach (var mode in deliveryModes.EnumerateObject())
+            {
+                if (TryGetFinalPriceFromDeliveryMode(mode.Value, out price))
+                    return true;
+            }
+
+            price = default;
+            return false;
+        }
+
+        private static bool TryGetFinalPriceFromDeliveryMode(
+            JsonElement deliveryMode,
+            out decimal price)
+        {
+            if (!TryGetPropertyIgnoreCase(deliveryMode, "possibleFulfillmentTypes", out var fulfillmentTypes)
+                || fulfillmentTypes.ValueKind != JsonValueKind.Object)
+            {
+                price = default;
+                return false;
+            }
+
+            if (TryGetPropertyIgnoreCase(fulfillmentTypes, "STORE", out var storeFulfillment)
+                && TryGetFinalPriceFromSellingPriceInfo(storeFulfillment, out price))
+            {
+                return true;
+            }
+
+            foreach (var fulfillment in fulfillmentTypes.EnumerateObject())
+            {
+                if (TryGetFinalPriceFromSellingPriceInfo(fulfillment.Value, out price))
+                    return true;
+            }
+
+            price = default;
+            return false;
+        }
+
+        private static bool TryGetFinalPriceFromSellingPriceInfo(
+            JsonElement parent,
+            out decimal price)
+        {
+            if (parent.TryGetProperty("sellingPriceInfo", out var priceInfo)
+                && priceInfo.TryGetProperty("finalPrice", out var finalPriceProp)
+                && finalPriceProp.TryGetDecimal(out price)
+                && price > 0)
+            {
+                return true;
+            }
+
+            price = default;
+            return false;
         }
 
         private static bool TryGetPropertyIgnoreCase(
