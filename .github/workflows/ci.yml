@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - run: dotnet restore PriceSaver.Server.Tests/PriceSaver.Server.Tests.csproj
+      - run: dotnet build PriceSaver.Server.Tests/PriceSaver.Server.Tests.csproj --no-restore -c Release
+      - run: dotnet test PriceSaver.Server.Tests/PriceSaver.Server.Tests.csproj --no-build -c Release --verbosity normal
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pricesaver.client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: pricesaver.client/package-lock.json
+      - run: npm ci
+      - run: npm run build
