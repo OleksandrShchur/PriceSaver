@@ -13,7 +13,7 @@ Repository: https://github.com/OleksandrShchur/PriceSaver
 
 Use this skill whenever the task involves the PriceSaver codebase or any of its core domains:
 
-- Adding or fixing a **store price parser** (e.g. ATB, Silpo, Metro, Epicentr, or a new retailer).
+- Adding or fixing a **store price parser** (e.g. ATB, Silpo, Maudau, Metro, or a new retailer). For a full add-store checklist, also follow [`.cursor/skills/add-store/SKILL.md`](../../.cursor/skills/add-store/SKILL.md).
 - Working on the **Telegram bot** — webhook/long-polling, commands, message handlers, subscription flows.
 - Managing **subscriptions** (create, list, deactivate, notify-on-increase) and **users**.
 - Running or scheduling **price checks** (background jobs, manual triggers, notifications).
@@ -27,8 +27,8 @@ Do **not** use this skill for unrelated .NET/React projects.
 
 This skill can:
 
-- **Create new price parsers** implementing `IPriceParser` (`StoreKey`, `CanParse(url)`, `ParseAsync(url, ct)`) and register them in DI.
-- **Extend store support** by adding a `StoreType` enum value and mapping it through the parser resolution logic.
+- **Create new price parsers** implementing `IPriceParser` (`StoreKey`, `StoreType`, `CanParse(url)`, `ParseAsync(url, ct)`) and register them via `AddPriceParserHttpClient<TParser>`.
+- **Extend store support** by adding a `StoreType` enum value, `InferStoreType` mapping, Telegram copy, and docs (see add-store skill).
 - **Implement Telegram bot behavior** — handle `Update` payloads, parse commands, drive subscription conversations, and send notifications via `ITelegramService`.
 - **Manage subscriptions** through `ISubscriptionService` / `SubscriptionHandler` (add a product URL, list active subscriptions, toggle `IsActive` / `NotifyOnIncrease`).
 - **Run price checks** via `PriceCheckerService.CheckAllAsync()`, triggered by the scheduled job or the `POST /api/jobs/check-prices` endpoint.
@@ -41,7 +41,7 @@ This skill can:
 
 Activate this skill on phrases or files such as:
 
-- "add a parser for `<store>`", "the Silpo/ATB/Metro/Epicentr price is wrong", "scraper returns wrong price".
+- "add a parser for `<store>`", "the Silpo/ATB/Metro/Maudau price is wrong", "scraper returns wrong price".
 - "track this product", "subscribe to a price", "notify me when the price drops".
 - "the Telegram bot doesn't respond", "handle a new bot command", "set up the webhook".
 - "run the price check job", "schedule price checks", "trigger a manual check".
@@ -74,14 +74,16 @@ Activate this skill on phrases or files such as:
 **Parsers (`PriceSaver.Server/Parsers`)**
 - All parsers implement `IPriceParser`:
   - `string StoreKey` — stable store identifier (e.g. `"atb"`).
+  - `StoreType StoreType` — enum value (persisted only via `InferStoreType(StoreKey)`).
   - `bool CanParse(string url)` — host-based URL matching.
   - `Task<(string Name, decimal Price)> ParseAsync(string url, CancellationToken ct)`.
-- Register new parsers in `Program.cs`: `builder.Services.AddSingleton<IPriceParser, MyStoreParser>();`. Parsers needing a configured `HttpClient` (headers, decompression, timeout) should use `AddHttpClient<TParser>(...)` like `SilpoPriceParser`.
+- Register new parsers with `builder.Services.AddPriceParserHttpClient<TParser>(...)`. Do **not** use `AddHttpClient<IPriceParser, T>` (shared client name / header collisions) or bare `AddSingleton<IPriceParser, T>` when a typed `HttpClient` is required.
 - Some parsers (e.g. ATB) fetch page text via the Jina Reader proxy (`https://r.jina.ai/`); note that Jina returns HTTP 200 even for upstream 404s, so check the body for error markers.
-- Currently registered parsers: `AtbPriceParser`, `SilpoPriceParser`, `MetroPriceParser`, `EpicentrPriceParser`. Use `HtmlAgilityPack` + compiled `Regex` for HTML/text extraction; prices are Ukrainian-locale (`грн`, decimal comma/point).
+- Currently registered parsers: `AtbPriceParser`, `SilpoPriceParser`, `MaudauPriceParser`, `MetroPriceParser`.
 
 **Store types**
-- `StoreType` enum (`Models/StoreType.cs`) uses `[Description]` for localized display names (Ukrainian). Add a new value when introducing a new retailer and keep it in sync with the matching parser.
+- Supported today: **ATB**, **Silpo**, **Maudau**, **METRO**.
+- `StoreType` enum (`Models/StoreType.cs`) uses `[Description]` for localized display names. Add a new value when introducing a new retailer and keep it in sync with the matching parser, `InferStoreType`, Telegram instructions, and docs.
 
 **Data model (EF Core)**
 - `Subscription`: `Id (Guid)`, `UserId (long)`, `ProductUrl`, `StoreType`, `ProductName?`, `CurrentPrice (decimal)`, `LastCheckedDate?`, `IsActive`, `NotifyOnIncrease`, `CreatedAt`.
@@ -93,9 +95,8 @@ Activate this skill on phrases or files such as:
 
 **Configuration**
 - `TelegramOptions` and `JobsOptions` are bound from configuration with data-annotation validation and `ValidateOnStart`. Telegram bot token and the jobs secret key live in `appsettings.json` / environment / user secrets — never hardcode secrets.
-- Logging uses Serilog (console sink).
 
 **Conventions**
 - Follow existing DI registration patterns and async/`CancellationToken` propagation.
-- Validate inputs at boundaries (URLs, Telegram payloads, API keys); avoid leaking parser/network errors to users.
+- User-facing Telegram copy is Ukrainian; validate inputs at boundaries; avoid leaking parser/network errors to users.
 - After model changes, add an EF Core migration and update `docs/sql/schema.sql`.
