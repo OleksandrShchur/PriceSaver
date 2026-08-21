@@ -24,9 +24,9 @@ Repo: https://github.com/OleksandrShchur/PriceSaver
 
 ## Stores and parsers
 
-Supported today: **ATB**, **Silpo**, **Maudau**, **Metro**. Parsers live in `PriceSaver.Server/Parsers/` and implement `IPriceParser` (`StoreKey`, `StoreType`, `CanParse`, `ParseAsync`). They are registered in `Program.cs` via `AddPriceParserHttpClient<TParser>` (typed client named after the concrete type, then exposed as `IPriceParser`) and resolved by URL via `CanParse`. Do not use `AddHttpClient<IPriceParser, T>` — all parsers would share one HttpClient name and single-value headers such as `Referer` collide.
+Supported today: **ATB**, **Silpo**, **Maudau**, **METRO**. Parsers live in `PriceSaver.Server/Parsers/` and implement `IPriceParser` (`StoreKey`, `StoreType`, `CanParse`, `ParseAsync`). They are registered in `Program.cs` via `AddPriceParserHttpClient<TParser>` (typed client named after the concrete type, then exposed as `IPriceParser`) and resolved by URL via `CanParse`. Do not use `AddHttpClient<IPriceParser, T>` — all parsers would share one HttpClient name and single-value headers such as `Referer` collide.
 
-**Adding a store is a multi-file change.** Follow [`.cursor/skills/add-store/SKILL.md`](.cursor/skills/add-store/SKILL.md) — enum, parser, DI, `InferStoreType`, and tests. Skipping `SubscriptionService.InferStoreType` leaves new subscriptions as `Unknown`.
+**Adding a store is a multi-file change.** Follow [`.cursor/skills/add-store/SKILL.md`](.cursor/skills/add-store/SKILL.md) — enum, parser, DI, `InferStoreType`, Telegram instructions/welcome copy, docs, and tests. Skipping `SubscriptionService.InferStoreType` leaves new subscriptions as `Unknown`.
 
 ## Conventions
 

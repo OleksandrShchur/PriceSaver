@@ -106,7 +106,7 @@ namespace PriceSaver.Server.Handlers
 
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
-                "📌 <b>Надішліть пряме посилання</b> на продукт з ATB, щоб почати відстежувати його ціну.",
+                "📌 <b>Надішліть пряме посилання</b> на продукт з АТБ, Сільпо, Maudau або METRO, щоб почати відстежувати його ціну.",
                 GetMainKeyboard(),
                 cancellationToken);
         }
@@ -202,7 +202,7 @@ namespace PriceSaver.Server.Handlers
             var safeBotName = WebUtility.HtmlEncode(_options.BotDisplayName);
             var welcomeText = $"👋 Ласкаво просимо до <b>{safeBotName}</b>!\n\n" +
                               "📌 <b>Як користуватися:</b>\n" +
-                              "1️⃣ Надішліть посилання на продукт з АТБ, Сільпо або Maudau\n" +
+                              "1️⃣ Надішліть посилання на продукт з АТБ, Сільпо, Maudau або METRO\n" +
                               "2️⃣ Бот автоматично відстежуватиме зміни його ціни\n" +
                               "3️⃣ Використовуйте меню нижче для керування вашими підписками\n\n" +
                               $"📦 Ви можете мати до <code>{_options.MaxSubscriptionsPerUser}</code> активних підписок одночасно.";
@@ -220,6 +220,7 @@ namespace PriceSaver.Server.Handlers
                                    "🏪 <a href=\"https://www.atbmarket.com/\">АТБ Маркет</a>\n\n" +
                                    "🏪 <a href=\"https://silpo.ua/\">Сільпо</a>\n\n" +
                                    "🏪 <a href=\"https://maudau.com.ua/\">Maudau</a>\n\n" +
+                                   "🏪 <a href=\"https://shop.metro.ua/\">METRO</a>\n\n" +
                                    "📌 <b>Інструкція користувача:</b>\n" +
                                    "• Надішліть будь-яке пряме посилання на товар, щоб увімкнути моніторинг\n" +
                                    "• Натисніть 📋 <b>Мої підписки</b>, щоб побачити список ваших товарів\n" +
