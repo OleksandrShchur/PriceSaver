@@ -9,5 +9,7 @@ namespace PriceSaver.Server.Models
         public decimal? Longitude { get; set; }
         public string? LocationName { get; set; }
         public DateTime? LocationUpdatedAt { get; set; }
+        public string ConversationState { get; set; } = ConversationStates.None;
+        public string? ConversationPayload { get; set; }
     }
 }

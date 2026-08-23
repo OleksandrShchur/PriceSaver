@@ -3,7 +3,13 @@
 CREATE TABLE [dbo].[Users] (
     [TelegramId] BIGINT NOT NULL PRIMARY KEY,
     [Username] NVARCHAR(100) NULL,
-    [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    [CreatedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    [Latitude] DECIMAL(9,6) NULL,
+    [Longitude] DECIMAL(9,6) NULL,
+    [LocationName] NVARCHAR(500) NULL,
+    [LocationUpdatedAt] DATETIME2 NULL,
+    [ConversationState] NVARCHAR(32) NOT NULL DEFAULT N'None',
+    [ConversationPayload] NVARCHAR(2000) NULL
 );
 
 CREATE TABLE [dbo].[Subscriptions] (
@@ -26,3 +32,18 @@ CREATE TABLE [dbo].[PriceHistories] (
     [Price] DECIMAL(18,2) NOT NULL,
     [CheckedAt] DATETIME2 NOT NULL DEFAULT GETUTCDATE()
 );
+
+CREATE TABLE [dbo].[StoreLocations] (
+    [Id] UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+    [LocationName] NVARCHAR(500) NOT NULL,
+    [Latitude] DECIMAL(9,6) NULL,
+    [Longitude] DECIMAL(9,6) NULL,
+    [StoreType] INT NOT NULL,
+    [IsOnline] BIT NOT NULL DEFAULT 0,
+    CONSTRAINT [CK_StoreLocations_OnlineOrCoordinates] CHECK (
+        [IsOnline] = 1 OR ([Latitude] IS NOT NULL AND [Longitude] IS NOT NULL)
+    )
+);
+
+CREATE NONCLUSTERED INDEX [IX_StoreLocations_StoreType]
+    ON [dbo].[StoreLocations] ([StoreType]);

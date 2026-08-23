@@ -54,6 +54,12 @@ try
         .ValidateDataAnnotations()
         .ValidateOnStart();
 
+    builder.Services
+        .AddOptions<NominatimOptions>()
+        .Bind(builder.Configuration.GetSection(NominatimOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
+
     // Database
     builder.Services.AddDbContext<ApplicationDbContext>(options =>
         options.UseSqlServer(
@@ -132,9 +138,19 @@ try
     builder.Services.AddSingleton<ITelegramService, TelegramService>();
     builder.Services.AddSingleton<ITelegramAlertService, TelegramAlertService>();
 
+    builder.Services.AddHttpClient<INominatimGeocodingService, NominatimGeocodingService>((sp, client) =>
+    {
+        var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<NominatimOptions>>().Value;
+        client.BaseAddress = new Uri(options.BaseUrl.TrimEnd('/') + "/");
+        client.Timeout = TimeSpan.FromSeconds(15);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(options.UserAgent);
+        client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+    });
+
     // Register handlers
     builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
     builder.Services.AddScoped<ISubscriptionHandler, SubscriptionHandler>();
+    builder.Services.AddScoped<ILocationOnboardingHandler, LocationOnboardingHandler>();
 
     // Register services
     builder.Services.AddScoped<PriceCheckerService>();

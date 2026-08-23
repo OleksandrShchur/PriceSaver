@@ -23,6 +23,8 @@ namespace PriceSaver.Server.Data
                 b.Property(u => u.LocationName).HasMaxLength(500);
                 b.Property(u => u.Latitude).HasPrecision(9, 6);
                 b.Property(u => u.Longitude).HasPrecision(9, 6);
+                b.Property(u => u.ConversationState).HasMaxLength(32).HasDefaultValue(ConversationStates.None);
+                b.Property(u => u.ConversationPayload).HasMaxLength(2000);
             });
 
             modelBuilder.Entity<Subscription>(b =>
