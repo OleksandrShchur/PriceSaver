@@ -17,7 +17,8 @@ namespace PriceSaver.Server.Tests.Services
             ApplicationDbContext db,
             IPriceParser[] parsers,
             out Mock<IUserService> userService,
-            int maxSubscriptions = 50)
+            int maxSubscriptions = 50,
+            ISilpoShortLinkResolver? silpoShortLinkResolver = null)
         {
             userService = new Mock<IUserService>();
             userService
@@ -26,8 +27,16 @@ namespace PriceSaver.Server.Tests.Services
 
             var options = Microsoft.Extensions.Options.Options.Create(new TelegramOptions { MaxSubscriptionsPerUser = maxSubscriptions });
             var logger = new TestLogger<SubscriptionService>();
+            var resolver = silpoShortLinkResolver ?? CreatePassthroughSilpoResolver();
 
-            return new SubscriptionService(db, userService.Object, options, logger, parsers);
+            return new SubscriptionService(db, userService.Object, resolver, options, logger, parsers);
+        }
+
+        private static ISilpoShortLinkResolver CreatePassthroughSilpoResolver()
+        {
+            var resolver = new Mock<ISilpoShortLinkResolver>();
+            resolver.Setup(r => r.NeedsResolve(It.IsAny<string>())).Returns(false);
+            return resolver.Object;
         }
 
         [Fact]
@@ -187,6 +196,99 @@ namespace PriceSaver.Server.Tests.Services
 
             result.Status.Should().Be(CreateSubscriptionStatus.ParseFailed);
             result.Subscription.Should().BeNull();
+            db.Subscriptions.Should().BeEmpty();
+        }
+
+        [Fact]
+        public async Task CreateSubscriptionAsync_ResolvesSilpoShortLink_BeforePersistAndParse()
+        {
+            const string shortUrl = "https://link.silpo.ua/e2451fad4255";
+            const string productUrl =
+                "https://silpo.ua/product/pechyvo-oreo-z-kakao-ta-nachynkoiu-vanilnogo-smaku-1023011";
+
+            using var db = TestDbContextFactory.CreateInMemory();
+            string? parsedUrl = null;
+            var parser = new FakePriceParser(
+                canParse: url => url.Contains("silpo.ua/product/", StringComparison.OrdinalIgnoreCase),
+                storeKey: "silpo",
+                parse: (url, _) =>
+                {
+                    parsedUrl = url;
+                    return Task.FromResult(("Oreo", 45.90m));
+                });
+
+            var resolver = new Mock<ISilpoShortLinkResolver>();
+            resolver.Setup(r => r.NeedsResolve(It.IsAny<string>())).Returns(true);
+            resolver
+                .Setup(r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(productUrl);
+
+            var sut = CreateService(db, [parser], out _, silpoShortLinkResolver: resolver.Object);
+
+            var result = await sut.CreateSubscriptionAsync(UserId, "user", shortUrl, CancellationToken.None);
+
+            result.Status.Should().Be(CreateSubscriptionStatus.Created);
+            result.Subscription!.ProductUrl.Should().Be(productUrl);
+            parsedUrl.Should().Be(productUrl);
+            resolver.Verify(
+                r => r.ResolveAsync(
+                    It.Is<string>(u => u.Contains("link.silpo.ua", StringComparison.OrdinalIgnoreCase)),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task CreateSubscriptionAsync_ReturnsAlreadyActive_WhenShortLinkResolvesToExistingProductUrl()
+        {
+            const string shortUrl = "https://link.silpo.ua/e2451fad4255";
+            const string productUrl =
+                "https://silpo.ua/product/pechyvo-oreo-z-kakao-ta-nachynkoiu-vanilnogo-smaku-1023011";
+
+            using var db = TestDbContextFactory.CreateInMemory();
+            db.Subscriptions.Add(new Subscription
+            {
+                UserId = UserId,
+                ProductUrl = productUrl,
+                IsActive = true,
+                ProductName = "Existing Oreo",
+                CurrentPrice = 40m
+            });
+            await db.SaveChangesAsync();
+
+            var resolver = new Mock<ISilpoShortLinkResolver>();
+            resolver.Setup(r => r.NeedsResolve(It.IsAny<string>())).Returns(true);
+            resolver
+                .Setup(r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(productUrl);
+
+            var sut = CreateService(db, [new FakePriceParser()], out _, silpoShortLinkResolver: resolver.Object);
+
+            var result = await sut.CreateSubscriptionAsync(UserId, "user", shortUrl, CancellationToken.None);
+
+            result.Status.Should().Be(CreateSubscriptionStatus.AlreadyActive);
+            result.Subscription!.ProductName.Should().Be("Existing Oreo");
+            db.Subscriptions.Should().ContainSingle();
+        }
+
+        [Fact]
+        public async Task CreateSubscriptionAsync_ReturnsUnsupportedStore_WhenShortLinkResolveFails()
+        {
+            using var db = TestDbContextFactory.CreateInMemory();
+            var resolver = new Mock<ISilpoShortLinkResolver>();
+            resolver.Setup(r => r.NeedsResolve(It.IsAny<string>())).Returns(true);
+            resolver
+                .Setup(r => r.ResolveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((string?)null);
+
+            var sut = CreateService(db, [new FakePriceParser()], out _, silpoShortLinkResolver: resolver.Object);
+
+            var result = await sut.CreateSubscriptionAsync(
+                UserId,
+                "user",
+                "https://link.silpo.ua/bad",
+                CancellationToken.None);
+
+            result.Status.Should().Be(CreateSubscriptionStatus.UnsupportedStore);
             db.Subscriptions.Should().BeEmpty();
         }
 

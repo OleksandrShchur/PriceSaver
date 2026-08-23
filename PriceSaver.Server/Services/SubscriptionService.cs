@@ -12,6 +12,7 @@ namespace PriceSaver.Server.Services
     {
         private readonly ApplicationDbContext _db;
         private readonly IUserService _userService;
+        private readonly ISilpoShortLinkResolver _silpoShortLinkResolver;
         private readonly TelegramOptions _options;
         private readonly ILogger<SubscriptionService> _logger;
         private readonly IPriceParser[] _parsers;
@@ -19,12 +20,14 @@ namespace PriceSaver.Server.Services
         public SubscriptionService(
             ApplicationDbContext db,
             IUserService userService,
+            ISilpoShortLinkResolver silpoShortLinkResolver,
             IOptions<TelegramOptions> options,
             ILogger<SubscriptionService> logger,
             IEnumerable<IPriceParser> parsers)
         {
             _db = db;
             _userService = userService;
+            _silpoShortLinkResolver = silpoShortLinkResolver;
             _options = options.Value;
             _logger = logger;
             _parsers = parsers.ToArray();
@@ -74,6 +77,15 @@ namespace PriceSaver.Server.Services
         public async Task<CreateSubscriptionResult> CreateSubscriptionAsync(long userId, string? username, string url, CancellationToken cancellationToken)
         {
             var normalizedUrl = ProductUrlNormalizer.Normalize(url);
+
+            if (_silpoShortLinkResolver.NeedsResolve(normalizedUrl))
+            {
+                var resolvedUrl = await _silpoShortLinkResolver.ResolveAsync(normalizedUrl, cancellationToken);
+                if (string.IsNullOrWhiteSpace(resolvedUrl))
+                    return new CreateSubscriptionResult(CreateSubscriptionStatus.UnsupportedStore);
+
+                normalizedUrl = ProductUrlNormalizer.Normalize(resolvedUrl);
+            }
 
             _logger.LogDebug(
                 "Checking for existing subscription. UserId: {UserId}, Url: {Url}",
