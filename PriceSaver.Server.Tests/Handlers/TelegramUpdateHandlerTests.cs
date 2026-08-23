@@ -19,17 +19,20 @@ namespace PriceSaver.Server.Tests.Handlers
             Mock<ITelegramService> telegram,
             Mock<IUserService> userService,
             Mock<ISubscriptionHandler> subscriptionHandler,
-            Mock<ILocationOnboardingHandler>? locationOnboarding = null)
+            Mock<ILocationOnboardingHandler>? locationOnboarding = null,
+            Mock<ISettingsHandler>? settingsHandler = null)
         {
             var options = Microsoft.Extensions.Options.Options.Create(new TelegramOptions { BotDisplayName = "PriceSaver", MaxSubscriptionsPerUser = 50 });
             var logger = new TestLogger<TelegramUpdateHandler>();
             locationOnboarding ??= new Mock<ILocationOnboardingHandler>();
+            settingsHandler ??= new Mock<ISettingsHandler>();
             return new TelegramUpdateHandler(
                 telegram.Object,
                 options,
                 userService.Object,
                 subscriptionHandler.Object,
                 locationOnboarding.Object,
+                settingsHandler.Object,
                 logger);
         }
 
@@ -430,6 +433,140 @@ namespace PriceSaver.Server.Tests.Handlers
             await sut.HandleAsync(update, CancellationToken.None);
 
             location.Verify(l => l.HandleCallbackAsync(It.IsAny<CallbackQuery>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnSettings_WithoutLocation_RedirectsToLocationFlow()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+            var location = new Mock<ILocationOnboardingHandler>();
+            var settings = new Mock<ISettingsHandler>();
+            SetupUserWithLocation(userService, hasLocation: false);
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler, location, settings);
+
+            await sut.HandleAsync(TextUpdate("/settings"), CancellationToken.None);
+
+            settings.Verify(s => s.SendSettingsAsync(
+                    It.IsAny<long>(), It.IsAny<Models.User>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+            location.Verify(l => l.PromptForLocationAsync(ChatId, false, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnSettings_WithLocation_ForwardsToSettingsHandler()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+            var location = new Mock<ILocationOnboardingHandler>();
+            var settings = new Mock<ISettingsHandler>();
+            SetupUserWithLocation(userService, hasLocation: true);
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler, location, settings);
+
+            await sut.HandleAsync(TextUpdate(SettingsHandler.SettingsButtonText), CancellationToken.None);
+
+            settings.Verify(s => s.SendSettingsAsync(
+                    ChatId,
+                    It.Is<Models.User>(u => u.LocationName == "Kyiv"),
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnSettings_WhileChangingLocation_ClearsConversationState()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+            var location = new Mock<ILocationOnboardingHandler>();
+            var settings = new Mock<ISettingsHandler>();
+
+            userService.Setup(u => u.HasLocationAsync(ChatId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            userService.Setup(u => u.GetAsync(ChatId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Models.User
+                {
+                    TelegramId = ChatId,
+                    Latitude = 50m,
+                    Longitude = 30m,
+                    LocationName = "Kyiv",
+                    ConversationState = ConversationStates.AwaitingLocation
+                });
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler, location, settings);
+
+            await sut.HandleAsync(TextUpdate("/settings"), CancellationToken.None);
+
+            userService.Verify(u => u.SetConversationStateAsync(
+                ChatId, ConversationStates.None, null, It.IsAny<CancellationToken>()), Times.Once);
+            settings.Verify(s => s.SendSettingsAsync(
+                    ChatId, It.IsAny<Models.User>(), It.IsAny<CancellationToken>()),
+                Times.Once);
+            location.Verify(l => l.HandleTypedLocationAsync(
+                    It.IsAny<long>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnAwaitingLocation_WithExistingLocation_ForwardsTypedTextToLocationHandler()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+            var location = new Mock<ILocationOnboardingHandler>();
+
+            userService.Setup(u => u.HasLocationAsync(ChatId, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            userService.Setup(u => u.GetAsync(ChatId, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new Models.User
+                {
+                    TelegramId = ChatId,
+                    Latitude = 50m,
+                    Longitude = 30m,
+                    LocationName = "Kyiv",
+                    ConversationState = ConversationStates.AwaitingLocation
+                });
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler, location);
+
+            await sut.HandleAsync(TextUpdate("Lviv"), CancellationToken.None);
+
+            location.Verify(l => l.HandleTypedLocationAsync(ChatId, "Lviv", It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task HandleAsync_OnSettingsCallback_RoutesToSettingsHandler()
+        {
+            var telegram = new Mock<ITelegramService>();
+            var userService = new Mock<IUserService>();
+            var subscriptionHandler = new Mock<ISubscriptionHandler>();
+            var location = new Mock<ILocationOnboardingHandler>();
+            var settings = new Mock<ISettingsHandler>();
+            location.Setup(l => l.IsLocationCallback(It.IsAny<string?>())).Returns(false);
+            settings.Setup(s => s.IsSettingsCallback(SettingsHandler.CallbackChangeLocation)).Returns(true);
+
+            var sut = CreateHandler(telegram, userService, subscriptionHandler, location, settings);
+
+            var update = new Update
+            {
+                CallbackQuery = new CallbackQuery
+                {
+                    Id = "cbq-settings",
+                    Data = SettingsHandler.CallbackChangeLocation,
+                    From = new TelegramUser { Id = ChatId, FirstName = "Test" },
+                    Message = new Message
+                    {
+                        MessageId = 12,
+                        Chat = new Chat { Id = ChatId, Type = ChatType.Private }
+                    }
+                }
+            };
+
+            await sut.HandleAsync(update, CancellationToken.None);
+
+            settings.Verify(s => s.HandleCallbackAsync(It.IsAny<CallbackQuery>(), It.IsAny<CancellationToken>()), Times.Once);
         }
     }
 }

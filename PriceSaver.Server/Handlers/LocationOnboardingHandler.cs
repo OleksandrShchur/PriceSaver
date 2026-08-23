@@ -320,12 +320,13 @@ namespace PriceSaver.Server.Handlers
             return displayName[..(maxLen - 1)] + "…";
         }
 
-        internal static IReplyMarkup GetMainKeyboard()
+        public static IReplyMarkup GetMainKeyboard()
         {
             return new ReplyKeyboardMarkup(
                 new[]
                 {
                     new[] { new KeyboardButton("📋 Мої підписки") },
+                    new[] { new KeyboardButton(SettingsHandler.SettingsButtonText) },
                     new[] { new KeyboardButton("❓ Інструкції") }
                 })
             {
