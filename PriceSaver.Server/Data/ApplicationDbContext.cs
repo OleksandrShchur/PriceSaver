@@ -10,6 +10,7 @@ namespace PriceSaver.Server.Data
         public DbSet<User> Users => Set<User>();
         public DbSet<Subscription> Subscriptions => Set<Subscription>();
         public DbSet<PriceHistory> PriceHistories => Set<PriceHistory>();
+        public DbSet<StoreLocation> StoreLocations => Set<StoreLocation>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -19,6 +20,9 @@ namespace PriceSaver.Server.Data
             {
                 b.HasKey(u => u.TelegramId);
                 b.Property(u => u.Username).HasMaxLength(100);
+                b.Property(u => u.LocationName).HasMaxLength(500);
+                b.Property(u => u.Latitude).HasPrecision(9, 6);
+                b.Property(u => u.Longitude).HasPrecision(9, 6);
             });
 
             modelBuilder.Entity<Subscription>(b =>
@@ -32,6 +36,16 @@ namespace PriceSaver.Server.Data
             modelBuilder.Entity<PriceHistory>(b =>
             {
                 b.HasKey(p => p.Id);
+            });
+
+            modelBuilder.Entity<StoreLocation>(b =>
+            {
+                b.HasKey(s => s.Id);
+                b.Property(s => s.LocationName).IsRequired().HasMaxLength(500);
+                b.Property(s => s.Latitude).HasPrecision(9, 6);
+                b.Property(s => s.Longitude).HasPrecision(9, 6);
+                b.HasIndex(s => s.StoreType);
+                // CHECK (IsOnline = 1 OR coordinates present) lives in docs/sql/001_add_user_and_store_locations.sql
             });
         }
     }
