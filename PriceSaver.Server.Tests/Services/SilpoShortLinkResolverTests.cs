@@ -7,8 +7,10 @@ namespace PriceSaver.Server.Tests.Services
     public class SilpoShortLinkResolverTests
     {
         private const string ShortUrl = "https://link.silpo.ua/e2451fad4255";
-        private const string ProductUrl =
-            "https://silpo.ua/product/pechyvo-oreo-z-kakao-ta-nachynkoiu-vanilnogo-smaku-1023011";
+        private const string ProductId = "1f134686-841e-64fa-a6cc-ffc2b325d5fc";
+        private const string ProductUrl = "https://silpo.ua/product/" + ProductId;
+        private const string DeepLinksApiUrl =
+            "https://sf-mobile-api.silpo.ua/v1/deep-links/e2451fad4255";
 
         private static SilpoShortLinkResolver CreateSut(StubHttpMessageHandler handler)
         {
@@ -31,18 +33,34 @@ namespace PriceSaver.Server.Tests.Services
         }
 
         [Fact]
-        public async Task ResolveAsync_ReturnsFinalProductUrl_WhenRedirectSucceeded()
+        public async Task ResolveAsync_ReturnsProductUrl_FromDeepLinksFallback()
         {
-            var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                RequestMessage = new HttpRequestMessage(HttpMethod.Get, ProductUrl)
-            });
+            var body =
+                $$"""
+                {"target":"https://link.silpo.ua?apn=ua.silpo.android&fallback=https%3A%2F%2Fsilpo.ua%2Fproduct%2F{{ProductId}}&productId={{ProductId}}&scheme=silpoua"}
+                """;
+            var handler = StubHttpMessageHandler.WithBody(body);
             var sut = CreateSut(handler);
 
             var result = await sut.ResolveAsync(ShortUrl, CancellationToken.None);
 
             result.Should().Be(ProductUrl);
-            handler.LastRequest!.RequestUri!.ToString().Should().Be(ShortUrl);
+            handler.LastRequest!.RequestUri!.ToString().Should().Be(DeepLinksApiUrl);
+        }
+
+        [Fact]
+        public async Task ResolveAsync_ReturnsProductUrl_FromProductId_WhenFallbackMissing()
+        {
+            var body =
+                $$"""
+                {"target":"https://link.silpo.ua?productId={{ProductId}}&scheme=silpoua"}
+                """;
+            var handler = StubHttpMessageHandler.WithBody(body);
+            var sut = CreateSut(handler);
+
+            var result = await sut.ResolveAsync(ShortUrl, CancellationToken.None);
+
+            result.Should().Be(ProductUrl);
         }
 
         [Fact]
@@ -57,12 +75,10 @@ namespace PriceSaver.Server.Tests.Services
         }
 
         [Fact]
-        public async Task ResolveAsync_ReturnsNull_WhenFinalUrlIsNotSilpoProduct()
+        public async Task ResolveAsync_ReturnsNull_WhenTargetHasNoProduct()
         {
-            var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                RequestMessage = new HttpRequestMessage(HttpMethod.Get, "https://silpo.ua/category/dairy")
-            });
+            var body = """{"target":"https://link.silpo.ua?scheme=silpoua"}""";
+            var handler = StubHttpMessageHandler.WithBody(body);
             var sut = CreateSut(handler);
 
             var result = await sut.ResolveAsync(ShortUrl, CancellationToken.None);
@@ -71,17 +87,30 @@ namespace PriceSaver.Server.Tests.Services
         }
 
         [Fact]
-        public async Task ResolveAsync_ReturnsNull_WhenFinalHostIsNotSilpo()
+        public async Task ResolveAsync_ReturnsNull_WhenFallbackIsNotSilpoProduct()
         {
-            var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
-            {
-                RequestMessage = new HttpRequestMessage(HttpMethod.Get, "https://example.com/product/foo")
-            });
+            var body =
+                """
+                {"target":"https://link.silpo.ua?fallback=https%3A%2F%2Fexample.com%2Fproduct%2Ffoo"}
+                """;
+            var handler = StubHttpMessageHandler.WithBody(body);
             var sut = CreateSut(handler);
 
             var result = await sut.ResolveAsync(ShortUrl, CancellationToken.None);
 
             result.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task ResolveAsync_ReturnsNull_WhenShortCodeMissing()
+        {
+            var handler = StubHttpMessageHandler.WithBody("{}");
+            var sut = CreateSut(handler);
+
+            var result = await sut.ResolveAsync("https://link.silpo.ua/", CancellationToken.None);
+
+            result.Should().BeNull();
+            handler.LastRequest.Should().BeNull();
         }
     }
 }

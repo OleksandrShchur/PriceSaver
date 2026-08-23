@@ -5,7 +5,7 @@ namespace PriceSaver.Server.Services
         bool NeedsResolve(string url);
 
         /// <summary>
-        /// Follows redirects for a Silpo short link and returns the final absolute URL,
+        /// Resolves a Silpo app short link via the deep-links API to a silpo.ua/product URL,
         /// or null if resolution fails or the destination is not a Silpo product page.
         /// </summary>
         Task<string?> ResolveAsync(string url, CancellationToken cancellationToken = default);
