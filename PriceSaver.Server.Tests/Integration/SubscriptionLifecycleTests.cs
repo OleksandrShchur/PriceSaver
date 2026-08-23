@@ -57,6 +57,19 @@ namespace PriceSaver.Server.Tests.Integration
         [Fact]
         public async Task FullLifecycle_Create_List_Remove()
         {
+            _factory.SeedDb(db =>
+            {
+                db.Users.Add(new User
+                {
+                    TelegramId = ChatId,
+                    Username = "tester",
+                    Latitude = 50.45m,
+                    Longitude = 30.52m,
+                    LocationName = "Kyiv",
+                    LocationUpdatedAt = DateTime.UtcNow
+                });
+            });
+
             var client = _factory.CreateClient();
             while (_factory.Telegram.Messages.TryDequeue(out _)) { }
             while (_factory.Telegram.RichMessages.TryDequeue(out _)) { }

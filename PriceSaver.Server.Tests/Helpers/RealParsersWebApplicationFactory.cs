@@ -31,6 +31,10 @@ namespace PriceSaver.Server.Tests.Helpers
                     ["Jobs:SecretKey"] = PriceSaverWebApplicationFactory.JobsSecret,
                     ["Telegram:BotToken"] = string.Empty,
                     ["Telegram:MaxSubscriptionsPerUser"] = "50",
+                    ["Nominatim:BaseUrl"] = "https://nominatim.openstreetmap.org",
+                    ["Nominatim:UserAgent"] = "PriceSaver-Tests/1.0",
+                    ["Nominatim:MinRequestIntervalSeconds"] = "0.5",
+                    ["Nominatim:SearchResultLimit"] = "3",
                 });
             });
 
