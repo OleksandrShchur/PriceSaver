@@ -17,6 +17,7 @@ namespace PriceSaver.Server.Handlers
         private readonly IUserService _userService;
         private readonly ISubscriptionHandler _subscriptionHandler;
         private readonly ILocationOnboardingHandler _locationOnboarding;
+        private readonly ISettingsHandler _settingsHandler;
         private readonly ILogger<TelegramUpdateHandler> _logger;
 
         public TelegramUpdateHandler(
@@ -25,6 +26,7 @@ namespace PriceSaver.Server.Handlers
             IUserService userService,
             ISubscriptionHandler subscriptionHandler,
             ILocationOnboardingHandler locationOnboarding,
+            ISettingsHandler settingsHandler,
             ILogger<TelegramUpdateHandler> logger)
         {
             _telegram = telegram;
@@ -32,6 +34,7 @@ namespace PriceSaver.Server.Handlers
             _userService = userService;
             _subscriptionHandler = subscriptionHandler;
             _locationOnboarding = locationOnboarding;
+            _settingsHandler = settingsHandler;
             _logger = logger;
         }
 
@@ -111,16 +114,46 @@ namespace PriceSaver.Server.Handlers
                 (user.ConversationState == ConversationStates.AwaitingLocation ||
                  user.ConversationState == ConversationStates.AwaitingLocationConfirm);
 
-            if (!hasLocation)
+            var isSettingsRequest =
+                text.StartsWith("/settings", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals(SettingsHandler.SettingsButtonText, StringComparison.OrdinalIgnoreCase);
+
+            if (isSettingsRequest)
             {
-                if (inLocationFlow ||
-                    text.Equals(LocationOnboardingHandler.BackButtonText, StringComparison.OrdinalIgnoreCase) ||
-                    text.Equals(LocationOnboardingHandler.ShareLocationButtonText, StringComparison.OrdinalIgnoreCase))
+                if (!hasLocation)
                 {
-                    await _locationOnboarding.HandleTypedLocationAsync(chatId, text, cancellationToken);
+                    await _locationOnboarding.PromptForLocationAsync(
+                        chatId,
+                        includeWelcomeBackHint: false,
+                        cancellationToken);
                     return;
                 }
 
+                if (inLocationFlow)
+                {
+                    await _userService.SetConversationStateAsync(
+                        chatId,
+                        ConversationStates.None,
+                        payload: null,
+                        cancellationToken);
+                }
+
+                await _settingsHandler.SendSettingsAsync(chatId, user!, cancellationToken);
+                return;
+            }
+
+            // Allow changing location even when coords already exist (Settings → Змінити локацію).
+            if (inLocationFlow ||
+                (!hasLocation &&
+                 (text.Equals(LocationOnboardingHandler.BackButtonText, StringComparison.OrdinalIgnoreCase) ||
+                  text.Equals(LocationOnboardingHandler.ShareLocationButtonText, StringComparison.OrdinalIgnoreCase))))
+            {
+                await _locationOnboarding.HandleTypedLocationAsync(chatId, text, cancellationToken);
+                return;
+            }
+
+            if (!hasLocation)
+            {
                 await _locationOnboarding.PromptForLocationAsync(
                     chatId,
                     includeWelcomeBackHint: false,
@@ -169,6 +202,12 @@ namespace PriceSaver.Server.Handlers
                 if (_locationOnboarding.IsLocationCallback(data))
                 {
                     await _locationOnboarding.HandleCallbackAsync(callbackQuery, cancellationToken);
+                    return;
+                }
+
+                if (_settingsHandler.IsSettingsCallback(data))
+                {
+                    await _settingsHandler.HandleCallbackAsync(callbackQuery, cancellationToken);
                     return;
                 }
 
@@ -294,7 +333,8 @@ namespace PriceSaver.Server.Handlers
                                    "📌 <b>Інструкція користувача:</b>\n" +
                                    "• Надішліть будь-яке пряме посилання на товар, щоб увімкнути моніторинг\n" +
                                    "• Натисніть 📋 <b>Мої підписки</b>, щоб побачити список ваших товарів\n" +
-                                   "• Оберіть номер товару в списку, щоб змінити сповіщення або видалити підписку\n\n" +
+                                   "• Оберіть номер товару в списку, щоб змінити сповіщення або видалити підписку\n" +
+                                   "• Натисніть ⚙️ <b>Налаштування</b>, щоб переглянути або змінити локацію\n\n" +
                                    "🚀 <i>Залишилися питання? Просто надішліть посилання на товар!</i>";
 
             await _telegram.SendMessageWithKeyboardAsync(

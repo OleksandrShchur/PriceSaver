@@ -151,6 +151,7 @@ try
     builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
     builder.Services.AddScoped<ISubscriptionHandler, SubscriptionHandler>();
     builder.Services.AddScoped<ILocationOnboardingHandler, LocationOnboardingHandler>();
+    builder.Services.AddScoped<ISettingsHandler, SettingsHandler>();
 
     // Register services
     builder.Services.AddScoped<PriceCheckerService>();
