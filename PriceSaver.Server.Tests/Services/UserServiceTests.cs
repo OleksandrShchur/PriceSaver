@@ -17,6 +17,7 @@ namespace PriceSaver.Server.Tests.Services
             var user = db.Users.Single();
             user.TelegramId.Should().Be(100);
             user.Username.Should().Be("alice");
+            user.ConversationState.Should().Be(ConversationStates.None);
         }
 
         [Fact]
@@ -60,6 +61,65 @@ namespace PriceSaver.Server.Tests.Services
             await sut.EnsureUserExistsAsync(100, null, CancellationToken.None);
 
             db.Users.Single().Username.Should().Be("keep");
+        }
+
+        [Fact]
+        public async Task HasLocationAsync_ReturnsFalse_WhenCoordinatesMissing()
+        {
+            using var db = TestDbContextFactory.CreateInMemory();
+            db.Users.Add(new User { TelegramId = 100, Username = "u" });
+            await db.SaveChangesAsync();
+
+            var sut = new UserService(db);
+
+            (await sut.HasLocationAsync(100, CancellationToken.None)).Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task SaveLocationAsync_PersistsCoordinates_AndClearsConversation()
+        {
+            using var db = TestDbContextFactory.CreateInMemory();
+            db.Users.Add(new User
+            {
+                TelegramId = 100,
+                Username = "u",
+                ConversationState = ConversationStates.AwaitingLocationConfirm,
+                ConversationPayload = "[]"
+            });
+            await db.SaveChangesAsync();
+
+            var sut = new UserService(db);
+
+            await sut.SaveLocationAsync(100, 50.45m, 30.52m, "Kyiv", CancellationToken.None);
+
+            var user = db.Users.Single();
+            user.Latitude.Should().Be(50.45m);
+            user.Longitude.Should().Be(30.52m);
+            user.LocationName.Should().Be("Kyiv");
+            user.LocationUpdatedAt.Should().NotBeNull();
+            user.ConversationState.Should().Be(ConversationStates.None);
+            user.ConversationPayload.Should().BeNull();
+            (await sut.HasLocationAsync(100, CancellationToken.None)).Should().BeTrue();
+        }
+
+        [Fact]
+        public async Task SetConversationStateAsync_StoresPayload()
+        {
+            using var db = TestDbContextFactory.CreateInMemory();
+            db.Users.Add(new User { TelegramId = 100 });
+            await db.SaveChangesAsync();
+
+            var sut = new UserService(db);
+
+            await sut.SetConversationStateAsync(
+                100,
+                ConversationStates.AwaitingLocationConfirm,
+                "[{\"displayName\":\"A\"}]",
+                CancellationToken.None);
+
+            var user = await sut.GetAsync(100, CancellationToken.None);
+            user!.ConversationState.Should().Be(ConversationStates.AwaitingLocationConfirm);
+            user.ConversationPayload.Should().Contain("displayName");
         }
     }
 }

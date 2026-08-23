@@ -1,6 +1,7 @@
 using System.Net;
 using Microsoft.Extensions.Options;
 using PriceSaver.Server.Extensions;
+using PriceSaver.Server.Models;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Services;
 using Telegram.Bot.Types;
@@ -15,6 +16,7 @@ namespace PriceSaver.Server.Handlers
         private readonly TelegramOptions _options;
         private readonly IUserService _userService;
         private readonly ISubscriptionHandler _subscriptionHandler;
+        private readonly ILocationOnboardingHandler _locationOnboarding;
         private readonly ILogger<TelegramUpdateHandler> _logger;
 
         public TelegramUpdateHandler(
@@ -22,12 +24,14 @@ namespace PriceSaver.Server.Handlers
             IOptions<TelegramOptions> options,
             IUserService userService,
             ISubscriptionHandler subscriptionHandler,
+            ILocationOnboardingHandler locationOnboarding,
             ILogger<TelegramUpdateHandler> logger)
         {
             _telegram = telegram;
             _options = options.Value;
             _userService = userService;
             _subscriptionHandler = subscriptionHandler;
+            _locationOnboarding = locationOnboarding;
             _logger = logger;
         }
 
@@ -42,20 +46,32 @@ namespace PriceSaver.Server.Handlers
                 update.Type,
                 userId);
 
-            // Handle callback queries (button clicks)
             if (update.CallbackQuery is { Data: not null } callbackQuery)
             {
                 await HandleCallbackQueryAsync(callbackQuery, cancellationToken);
-
                 return;
             }
 
-            if (update.Message is not { Type: MessageType.Text } message)
+            if (update.Message is null)
             {
                 return;
             }
 
+            var message = update.Message;
             var chatId = message.Chat.Id;
+
+            if (message.Location is not null)
+            {
+                await _userService.EnsureUserExistsAsync(chatId, message.From?.Username, cancellationToken);
+                await _locationOnboarding.HandleSharedLocationAsync(chatId, message.Location, cancellationToken);
+                return;
+            }
+
+            if (message.Type != MessageType.Text || string.IsNullOrEmpty(message.Text))
+            {
+                return;
+            }
+
             var text = message.Text?.Trim() ?? string.Empty;
 
             if (text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
@@ -69,6 +85,46 @@ namespace PriceSaver.Server.Handlers
                 await _userService.EnsureUserExistsAsync(chatId, message.From?.Username, cancellationToken);
                 await SendWelcomeMessageAsync(chatId, cancellationToken);
 
+                if (!await _userService.HasLocationAsync(chatId, cancellationToken))
+                {
+                    await _locationOnboarding.PromptForLocationAsync(
+                        chatId,
+                        includeWelcomeBackHint: false,
+                        cancellationToken);
+                }
+
+                return;
+            }
+
+            if (text.StartsWith("/instructions", StringComparison.OrdinalIgnoreCase) ||
+                text.Equals("❓ Інструкції", StringComparison.OrdinalIgnoreCase))
+            {
+                await SendInstructionsAsync(chatId, cancellationToken);
+                return;
+            }
+
+            await _userService.EnsureUserExistsAsync(chatId, message.From?.Username, cancellationToken);
+
+            var user = await _userService.GetAsync(chatId, cancellationToken);
+            var hasLocation = user is { Latitude: not null, Longitude: not null };
+            var inLocationFlow = user is not null &&
+                (user.ConversationState == ConversationStates.AwaitingLocation ||
+                 user.ConversationState == ConversationStates.AwaitingLocationConfirm);
+
+            if (!hasLocation)
+            {
+                if (inLocationFlow ||
+                    text.Equals(LocationOnboardingHandler.BackButtonText, StringComparison.OrdinalIgnoreCase) ||
+                    text.Equals(LocationOnboardingHandler.ShareLocationButtonText, StringComparison.OrdinalIgnoreCase))
+                {
+                    await _locationOnboarding.HandleTypedLocationAsync(chatId, text, cancellationToken);
+                    return;
+                }
+
+                await _locationOnboarding.PromptForLocationAsync(
+                    chatId,
+                    includeWelcomeBackHint: false,
+                    cancellationToken);
                 return;
             }
 
@@ -76,15 +132,6 @@ namespace PriceSaver.Server.Handlers
                 text.Equals("📋 Мої підписки", StringComparison.OrdinalIgnoreCase))
             {
                 await _subscriptionHandler.SendSubscriptionsAsync(chatId, cancellationToken);
-
-                return;
-            }
-
-            if (text.StartsWith("/instructions", StringComparison.OrdinalIgnoreCase) || 
-                text.Equals("❓ Інструкції", StringComparison.OrdinalIgnoreCase))
-            {
-                await SendInstructionsAsync(chatId, cancellationToken);
-
                 return;
             }
 
@@ -100,14 +147,14 @@ namespace PriceSaver.Server.Handlers
                     message.From?.Username,
                     ProductUrlNormalizer.Normalize(uri.ToString()),
                     cancellationToken);
-                
+
                 return;
             }
 
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
                 "📌 <b>Надішліть пряме посилання</b> на продукт з АТБ, Сільпо, Maudau або METRO, щоб почати відстежувати його ціну.",
-                GetMainKeyboard(),
+                LocationOnboardingHandler.GetMainKeyboard(),
                 cancellationToken);
         }
 
@@ -116,7 +163,30 @@ namespace PriceSaver.Server.Handlers
             try
             {
                 var data = callbackQuery.Data;
+                var chatId = callbackQuery.From.Id;
                 var messageId = callbackQuery.Message?.MessageId ?? 0;
+
+                if (_locationOnboarding.IsLocationCallback(data))
+                {
+                    await _locationOnboarding.HandleCallbackAsync(callbackQuery, cancellationToken);
+                    return;
+                }
+
+                if (data?.StartsWith("sub_", StringComparison.Ordinal) == true &&
+                    !await _userService.HasLocationAsync(chatId, cancellationToken))
+                {
+                    await _telegram.AnswerCallbackQueryAsync(
+                        callbackQuery.Id,
+                        "Спочатку вкажіть локацію.",
+                        showAlert: true,
+                        cancellationToken);
+                    await _userService.EnsureUserExistsAsync(chatId, callbackQuery.From.Username, cancellationToken);
+                    await _locationOnboarding.PromptForLocationAsync(
+                        chatId,
+                        includeWelcomeBackHint: false,
+                        cancellationToken);
+                    return;
+                }
 
                 if (data?.StartsWith("sub_sel_") == true)
                 {
@@ -210,7 +280,7 @@ namespace PriceSaver.Server.Handlers
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
                 welcomeText,
-                GetMainKeyboard(),
+                LocationOnboardingHandler.GetMainKeyboard(),
                 cancellationToken: cancellationToken);
         }
 
@@ -230,22 +300,8 @@ namespace PriceSaver.Server.Handlers
             await _telegram.SendMessageWithKeyboardAsync(
                 chatId,
                 instructionsText,
-                GetMainKeyboard(),
+                LocationOnboardingHandler.GetMainKeyboard(),
                 cancellationToken: cancellationToken);
-        }
-
-        private static IReplyMarkup GetMainKeyboard()
-        {
-            return new ReplyKeyboardMarkup(
-                new[]
-                {
-                    new[] { new KeyboardButton("📋 Мої підписки") },
-                    new[] { new KeyboardButton("❓ Інструкції") }
-                })
-            {
-                ResizeKeyboard = true,
-                OneTimeKeyboard = false
-            };
         }
     }
 }
