@@ -147,6 +147,16 @@ try
         client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
     });
 
+    builder.Services.AddHttpClient<ISilpoShortLinkResolver, SilpoShortLinkResolver>(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(15);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+            "AppleWebKit/537.36 (KHTML, like Gecko) " +
+            "Chrome/125.0.0.0 Safari/537.36");
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("uk-UA,uk;q=0.9");
+    });
+
     // Register handlers
     builder.Services.AddScoped<ITelegramUpdateHandler, TelegramUpdateHandler>();
     builder.Services.AddScoped<ISubscriptionHandler, SubscriptionHandler>();
