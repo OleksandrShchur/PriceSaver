@@ -16,6 +16,17 @@ namespace PriceSaver.Server.Tests.Extensions
             value.GetDescription().Should().Be(expected);
         }
 
+        [Theory]
+        [InlineData(StoreType.ATB, "ATB")]
+        [InlineData(StoreType.Silpo, "Silpo")]
+        [InlineData(StoreType.Maudau, "Maudau")]
+        [InlineData(StoreType.Metro, "METRO")]
+        [InlineData(StoreType.Unknown, "Unknown")]
+        public void GetApiLabel_ReturnsEnglishApiLabel(StoreType value, string expected)
+        {
+            value.GetApiLabel().Should().Be(expected);
+        }
+
         [Fact]
         public void GetDescription_ReturnsEnumName_WhenNoDescriptionAttribute()
         {

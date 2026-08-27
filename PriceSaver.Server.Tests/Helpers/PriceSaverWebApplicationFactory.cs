@@ -45,6 +45,9 @@ namespace PriceSaver.Server.Tests.Helpers
                     ["Nominatim:UserAgent"] = "PriceSaver-Tests/1.0",
                     ["Nominatim:MinRequestIntervalSeconds"] = "0.5",
                     ["Nominatim:SearchResultLimit"] = "3",
+                    ["StoreLocationSources:Atb:BaseUrl"] = "https://example.com/atb-locations-api",
+                    ["StoreLocationSources:Silpo:BaseUrl"] = "https://example.com/silpo-locations-api",
+                    ["StoreLocationSources:Metro:BaseUrl"] = "https://example.com/metro-locations-api",
                 });
             });
 

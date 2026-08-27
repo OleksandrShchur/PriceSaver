@@ -6,6 +6,7 @@ using PriceSaver.Server.Middleware;
 using PriceSaver.Server.Options;
 using PriceSaver.Server.Parsers;
 using PriceSaver.Server.Services;
+using PriceSaver.Server.StoreLocations;
 using Serilog;
 using Serilog.Events;
 using System.Net;
@@ -57,6 +58,12 @@ try
     builder.Services
         .AddOptions<NominatimOptions>()
         .Bind(builder.Configuration.GetSection(NominatimOptions.SectionName))
+        .ValidateDataAnnotations()
+        .ValidateOnStart();
+
+    builder.Services
+        .AddOptions<StoreLocationSourcesOptions>()
+        .Bind(builder.Configuration.GetSection(StoreLocationSourcesOptions.SectionName))
         .ValidateDataAnnotations()
         .ValidateOnStart();
 
@@ -163,8 +170,30 @@ try
     builder.Services.AddScoped<ILocationOnboardingHandler, LocationOnboardingHandler>();
     builder.Services.AddScoped<ISettingsHandler, SettingsHandler>();
 
+    // Store location providers (ATB / Silpo / METRO). Maudau is online-only — no provider.
+    builder.Services.AddHttpClient<AtbStoreLocationProvider>(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(60);
+    });
+    builder.Services.AddHttpClient<SilpoStoreLocationProvider>(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(60);
+    });
+    builder.Services.AddHttpClient<MetroStoreLocationProvider>(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(60);
+    });
+
+    builder.Services.AddKeyedScoped<IStoreLocationProvider>("atb",
+        (sp, _) => sp.GetRequiredService<AtbStoreLocationProvider>());
+    builder.Services.AddKeyedScoped<IStoreLocationProvider>("silpo",
+        (sp, _) => sp.GetRequiredService<SilpoStoreLocationProvider>());
+    builder.Services.AddKeyedScoped<IStoreLocationProvider>("metro",
+        (sp, _) => sp.GetRequiredService<MetroStoreLocationProvider>());
+
     // Register services
     builder.Services.AddScoped<PriceCheckerService>();
+    builder.Services.AddScoped<StoreLocationRefreshService>();
     builder.Services.AddScoped<IUserService, UserService>();
     builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 

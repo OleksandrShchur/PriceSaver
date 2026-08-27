@@ -40,6 +40,8 @@ CREATE TABLE [dbo].[StoreLocations] (
     [Longitude] DECIMAL(9,6) NULL,
     [StoreType] INT NOT NULL,
     [IsOnline] BIT NOT NULL DEFAULT 0,
+    [ExternalId] NVARCHAR(100) NULL,
+    [LastRefreshedAt] DATETIME2 NULL,
     CONSTRAINT [CK_StoreLocations_OnlineOrCoordinates] CHECK (
         [IsOnline] = 1 OR ([Latitude] IS NOT NULL AND [Longitude] IS NOT NULL)
     )
@@ -47,3 +49,7 @@ CREATE TABLE [dbo].[StoreLocations] (
 
 CREATE NONCLUSTERED INDEX [IX_StoreLocations_StoreType]
     ON [dbo].[StoreLocations] ([StoreType]);
+
+CREATE UNIQUE NONCLUSTERED INDEX [IX_StoreLocations_StoreType_ExternalId]
+    ON [dbo].[StoreLocations] ([StoreType], [ExternalId])
+    WHERE [ExternalId] IS NOT NULL;

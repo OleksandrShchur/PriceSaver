@@ -46,8 +46,13 @@ namespace PriceSaver.Server.Data
                 b.Property(s => s.LocationName).IsRequired().HasMaxLength(500);
                 b.Property(s => s.Latitude).HasPrecision(9, 6);
                 b.Property(s => s.Longitude).HasPrecision(9, 6);
+                b.Property(s => s.ExternalId).HasMaxLength(100);
                 b.HasIndex(s => s.StoreType);
+                b.HasIndex(s => new { s.StoreType, s.ExternalId })
+                    .IsUnique()
+                    .HasFilter("[ExternalId] IS NOT NULL");
                 // CHECK (IsOnline = 1 OR coordinates present) lives in docs/sql/001_add_user_and_store_locations.sql
+                // TODO: if soft-deactivation is chosen, add IsActive + filter active rows in nearest-store queries
             });
         }
     }
